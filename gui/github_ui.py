@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import (
     QProgressBar, QListWidget, QListWidgetItem, QToolBar, QAction
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QUrl, QTimer
-from PyQt5.QtGui import QFont, QColor, QPalette, QIcon, QDesktopServices
+from PyQt5.QtGui import QFont, QColor, QPalette, QIcon, QDesktopServices, QPixmap, QNetworkRequest, QNetworkReply
+from PyQt5.QtNetwork import QNetworkAccessManager
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,7 +55,6 @@ class LoadingThread(QThread):
 
 
 class CookieLoadThread(QThread):
-    """后台加载浏览器 Cookie 的线程"""
     finished = pyqtSignal(str, dict)
     error = pyqtSignal(str)
 
@@ -84,7 +84,6 @@ class CookieLoadThread(QThread):
 
 
 class BrowserCookieDialog(QDialog):
-    """浏览器 Cookie 选择对话框"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('从浏览器导入 Cookie')
@@ -111,9 +110,9 @@ class BrowserCookieDialog(QDialog):
         button_layout.setSpacing(10)
 
         browsers = [
-            ('chrome', 'Google Chrome', '🌐'),
-            ('edge', 'Microsoft Edge', '🌀'),
-            ('firefox', 'Mozilla Firefox', '🦊')
+            ('chrome', 'Google Chrome', '[C]'),
+            ('edge', 'Microsoft Edge', '[E]'),
+            ('firefox', 'Mozilla Firefox', '[F]')
         ]
 
         for browser_id, browser_name, icon in browsers:
@@ -168,7 +167,7 @@ class BrowserCookieDialog(QDialog):
         self.thread.start()
 
     def on_cookie_loaded(self, browser: str, cookies: dict):
-        self.status_label.setText(f'✅ 成功从 {browser} 提取 Cookie!')
+        self.status_label.setText(f'成功从 {browser} 提取 Cookie!')
         self.status_label.setStyleSheet('color: #1a7f37;')
         
         self.selected_cookies = cookies
@@ -177,6 +176,30 @@ class BrowserCookieDialog(QDialog):
     def on_error(self, error: str):
         self.status_label.setText(error)
         self.status_label.setStyleSheet('color: #cf222e;')
+
+
+class AvatarLabel(QLabel):
+    """支持网络图片加载的头像标签"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.network_manager = QNetworkAccessManager(self)
+        
+    def load_image(self, url: str):
+        """异步加载网络图片"""
+        if not url:
+            return
+        
+        request = QNetworkRequest(QUrl(url))
+        reply = self.network_manager.get(request)
+        reply.finished.connect(lambda: self._on_image_loaded(reply))
+    
+    def _on_image_loaded(self, reply: QNetworkReply):
+        """图片加载完成回调"""
+        if reply.error() == QNetworkReply.NoError:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(reply.readAll()):
+                self.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        reply.deleteLater()
 
 
 class LoginDialog(QDialog):
@@ -235,7 +258,7 @@ class LoginDialog(QDialog):
         ''')
         cookie_layout.addWidget(self.cookie_input)
 
-        self.import_cookie_btn = QPushButton('🌐 从浏览器导入')
+        self.import_cookie_btn = QPushButton('[Web] 从浏览器导入')
         self.import_cookie_btn.setStyleSheet('''
             QPushButton {
                 padding: 5px 15px;
@@ -262,7 +285,7 @@ class LoginDialog(QDialog):
         lang_layout.addWidget(self.lang_combo)
         layout.addLayout(lang_layout)
 
-        tip_label = QLabel('💡 提示：可通过 Token 页面生成 https://github.com/settings/tokens')
+        tip_label = QLabel('提示：可通过 Token 页面生成 https://github.com/settings/tokens')
         tip_label.setStyleSheet('color: #57606a; font-size: 12px;')
         tip_label.setWordWrap(True)
         layout.addWidget(tip_label)
@@ -295,7 +318,7 @@ class LoginDialog(QDialog):
             extractor = BrowserCookieExtractor()
             cookie_string = extractor.format_cookie_string(dialog.selected_cookies)
             self.cookie_input.setText(cookie_string)
-            self.status_label.setText('✅ Cookie 已成功导入')
+            self.status_label.setText('Cookie 已成功导入')
             self.status_label.setStyleSheet('color: #1a7f37;')
 
     def get_token(self):
@@ -348,17 +371,17 @@ class RepoCard(QFrame):
         stats_layout.setSpacing(15)
 
         stars = self.repo_data.get('stargazers_count', 0)
-        stars_label = QLabel(f'⭐ {stars}')
+        stars_label = QLabel(f'Stars: {stars}')
         stars_label.setStyleSheet(f'color: {GitHubColors.TEXT_SECONDARY};')
         stats_layout.addWidget(stars_label)
 
         forks = self.repo_data.get('forks_count', 0)
-        forks_label = QLabel(f'🍴 {forks}')
+        forks_label = QLabel(f'Forks: {forks}')
         forks_label.setStyleSheet(f'color: {GitHubColors.TEXT_SECONDARY};')
         stats_layout.addWidget(forks_label)
 
         issues = self.repo_data.get('open_issues_count', 0)
-        issues_label = QLabel(f'📋 {issues}')
+        issues_label = QLabel(f'Issues: {issues}')
         issues_label.setStyleSheet(f'color: {GitHubColors.TEXT_SECONDARY};')
         stats_layout.addWidget(issues_label)
 
@@ -378,12 +401,13 @@ class RepoCard(QFrame):
 
 
 class RepositoryDetailView(QWidget):
-    def __init__(self, api: GitHubAPI, repo_data: dict):
+    def __init__(self, api: GitHubAPI, repo_data: dict, on_back=None):
         super().__init__()
         self.api = api
         self.repo_data = repo_data
         self.owner = repo_data.get('owner', {}).get('login', '')
         self.repo_name = repo_data.get('name', '')
+        self.on_back = on_back
         self.setup_ui()
 
     def setup_ui(self):
@@ -392,6 +416,22 @@ class RepositoryDetailView(QWidget):
         main_layout.setSpacing(15)
 
         header = QHBoxLayout()
+        
+        back_btn = QPushButton('< 返回')
+        back_btn.setStyleSheet('''
+            QPushButton {
+                padding: 8px 16px;
+                border: 1px solid #d0d7de;
+                border-radius: 6px;
+                background-color: #f6f8fa;
+            }
+            QPushButton:hover {
+                background-color: #e5e7eb;
+            }
+        ''')
+        back_btn.clicked.connect(self.go_back)
+        header.addWidget(back_btn)
+        
         title = QLabel(f'{self.owner}/{self.repo_name}')
         title.setFont(QFont('Arial', 24, QFont.Bold))
         header.addWidget(title)
@@ -417,10 +457,14 @@ class RepositoryDetailView(QWidget):
         main_layout.addLayout(header)
 
         tabs = QTabWidget()
-        tabs.addTab(RepoFilesView(self.api, self.owner, self.repo_name), '📁 文件')
-        tabs.addTab(RepoIssuesView(self.api, self.owner, self.repo_name), '📋 Issues')
-        tabs.addTab(RepoPRsView(self.api, self.owner, self.repo_name), '🔀 Pull Requests')
+        tabs.addTab(RepoFilesView(self.api, self.owner, self.repo_name), '[F] 文件')
+        tabs.addTab(RepoIssuesView(self.api, self.owner, self.repo_name), '[I] Issues')
+        tabs.addTab(RepoPRsView(self.api, self.owner, self.repo_name), '[P] Pull Requests')
         main_layout.addWidget(tabs)
+
+    def go_back(self):
+        if self.on_back:
+            self.on_back()
 
 
 class RepoFilesView(QWidget):
@@ -443,12 +487,18 @@ class RepoFilesView(QWidget):
         self.path_label.setFont(QFont('Arial', 12, QFont.Bold))
         header.addWidget(self.path_label)
         header.addStretch()
+        
+        branch_label = QLabel(f'分支：{self.branch}')
+        branch_label.setStyleSheet(f'color: {GitHubColors.TEXT_SECONDARY};')
+        header.addWidget(branch_label)
         layout.addLayout(header)
 
         self.file_tree = QTreeWidget()
-        self.file_tree.setColumnCount(1)
-        self.file_tree.setHeaderLabels(['文件名'])
-        self.file_tree.setColumnWidth(0, 400)
+        self.file_tree.setColumnCount(3)
+        self.file_tree.setHeaderLabels(['文件名', '大小', '更新时间'])
+        self.file_tree.setColumnWidth(0, 300)
+        self.file_tree.setColumnWidth(1, 100)
+        self.file_tree.setColumnWidth(2, 150)
         self.file_tree.setStyleSheet('''
             QTreeWidget {
                 border: 1px solid #d0d7de;
@@ -478,10 +528,27 @@ class RepoFilesView(QWidget):
         self.file_tree.clear()
         for item in contents:
             tree_item = QTreeWidgetItem()
-            icon = '📁' if item['type'] == 'dir' else '📄'
+            icon = '[D]' if item['type'] == 'dir' else '[F]'
             tree_item.setText(0, f'{icon} {item["name"]}')
+            tree_item.setText(1, self.format_size(item.get('size', 0)))
+            
+            updated_at = item.get('html_url', '')
+            if updated_at:
+                updated_at = updated_at.split('/')[-1]
+            tree_item.setText(2, updated_at if updated_at else '')
+            
             tree_item.setData(0, Qt.UserRole, item)
             self.file_tree.addTopLevelItem(tree_item)
+
+    def format_size(self, size):
+        if size <= 0:
+            return '-'
+        elif size < 1024:
+            return f'{size} B'
+        elif size < 1024 * 1024:
+            return f'{size / 1024:.1f} KB'
+        else:
+            return f'{size / (1024 * 1024):.1f} MB'
 
     def on_item_double_click(self, item, column):
         data = item.data(0, Qt.UserRole)
@@ -514,6 +581,22 @@ class RepoFilesView(QWidget):
         decoded = data.get('decoded_content', data.get('content', ''))
         content.setPlainText(decoded)
         layout.addWidget(content)
+        
+        close_btn = QPushButton('关闭')
+        close_btn.setStyleSheet('''
+            QPushButton {
+                padding: 8px 20px;
+                border: 1px solid #d0d7de;
+                border-radius: 6px;
+                background-color: #f6f8fa;
+            }
+            QPushButton:hover {
+                background-color: #e5e7eb;
+            }
+        ''')
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+        
         dialog.exec_()
 
     def on_error(self, error):
@@ -536,8 +619,6 @@ class RepoIssuesView(QTableWidget):
             QTableWidget {
                 border: 1px solid #d0d7de;
                 border-radius: 6px;
-                gridline-color: #d0d7de;
-                gridline-width: 1px;
                 gridline-color: #f6f8fa;
             }
             QHeaderView::section {
@@ -549,6 +630,8 @@ class RepoIssuesView(QTableWidget):
             }
         ''')
         self.horizontalHeader().setStretchLastSection(True)
+        self.verticalHeader().setVisible(False)
+        self.setAlternatingRowColors(True)
 
     def load_issues(self):
         self.thread = LoadingThread(
@@ -562,17 +645,34 @@ class RepoIssuesView(QTableWidget):
     def on_issues_loaded(self, issues):
         self.setRowCount(len(issues))
         for row, issue in enumerate(issues):
-            self.setItem(row, 0, QTableWidgetItem(issue.get('title', '')))
-            self.setItem(row, 1, QTableWidgetItem(issue.get('user', {}).get('login', '')))
-            
-            state = '🟢 Open' if issue.get('state') == 'open' else '🔴 Closed'
-            self.setItem(row, 2, QTableWidgetItem(state))
-            
+            title_item = QTableWidgetItem(issue.get('title', ''))
+            title_item.setFlags(title_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 0, title_item)
+
+            user = issue.get('user', {})
+            author_item = QTableWidgetItem(user.get('login', ''))
+            author_item.setFlags(author_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 1, author_item)
+
+            state = 'Open' if issue.get('state') == 'open' else 'Closed'
+            state_item = QTableWidgetItem(state)
+            state_item.setFlags(state_item.flags() & ~Qt.ItemIsEditable)
+            if issue.get('state') == 'open':
+                state_item.setForeground(QColor('#1a7f37'))
+            else:
+                state_item.setForeground(QColor('#cf222e'))
+            self.setItem(row, 2, state_item)
+
             updated = issue.get('updated_at', '')[:10] if issue.get('updated_at') else ''
-            self.setItem(row, 3, QTableWidgetItem(updated))
+            date_item = QTableWidgetItem(updated)
+            date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 3, date_item)
 
     def on_error(self, error):
-        QMessageBox.critical(self, '错误', f'加载失败：{error}')
+        self.setRowCount(1)
+        error_item = QTableWidgetItem(f'加载失败：{error}')
+        error_item.setForeground(QColor('#cf222e'))
+        self.setItem(0, 0, error_item)
 
 
 class RepoPRsView(QTableWidget):
@@ -591,7 +691,7 @@ class RepoPRsView(QTableWidget):
             QTableWidget {
                 border: 1px solid #d0d7de;
                 border-radius: 6px;
-                gridline-color: #d0d7de;
+                gridline-color: #f6f8fa;
             }
             QHeaderView::section {
                 background-color: #f6f8fa;
@@ -602,6 +702,8 @@ class RepoPRsView(QTableWidget):
             }
         ''')
         self.horizontalHeader().setStretchLastSection(True)
+        self.verticalHeader().setVisible(False)
+        self.setAlternatingRowColors(True)
 
     def load_prs(self):
         self.thread = LoadingThread(
@@ -615,17 +717,40 @@ class RepoPRsView(QTableWidget):
     def on_prs_loaded(self, prs):
         self.setRowCount(len(prs))
         for row, pr in enumerate(prs):
-            self.setItem(row, 0, QTableWidgetItem(pr.get('title', '')))
-            self.setItem(row, 1, QTableWidgetItem(pr.get('user', {}).get('login', '')))
+            title_item = QTableWidgetItem(pr.get('title', ''))
+            title_item.setFlags(title_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 0, title_item)
+
+            user = pr.get('user', {})
+            author_item = QTableWidgetItem(user.get('login', ''))
+            author_item.setFlags(author_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 1, author_item)
+
+            if pr.get('merged_at'):
+                state = 'Merged'
+                color = '#8250df'
+            elif pr.get('draft'):
+                state = 'Draft'
+                color = '#57606a'
+            else:
+                state = 'Open'
+                color = '#1a7f37'
             
-            state = '🟢 Open' if pr.get('merged_at') is None else '🟣 Merged'
-            self.setItem(row, 2, QTableWidgetItem(state))
-            
+            state_item = QTableWidgetItem(state)
+            state_item.setFlags(state_item.flags() & ~Qt.ItemIsEditable)
+            state_item.setForeground(QColor(color))
+            self.setItem(row, 2, state_item)
+
             updated = pr.get('updated_at', '')[:10] if pr.get('updated_at') else ''
-            self.setItem(row, 3, QTableWidgetItem(updated))
+            date_item = QTableWidgetItem(updated)
+            date_item.setFlags(date_item.flags() & ~Qt.ItemIsEditable)
+            self.setItem(row, 3, date_item)
 
     def on_error(self, error):
-        QMessageBox.critical(self, '错误', f'加载失败：{error}')
+        self.setRowCount(1)
+        error_item = QTableWidgetItem(f'加载失败：{error}')
+        error_item.setForeground(QColor('#cf222e'))
+        self.setItem(0, 0, error_item)
 
 
 class RepositoriesView(QWidget):
@@ -734,25 +859,23 @@ class ProfileView(QWidget):
         info_layout = QHBoxLayout()
         info_layout.setSpacing(30)
 
-        avatar = QLabel()
-        avatar.setFixedSize(200, 200)
-        avatar.setStyleSheet('''
+        self.avatar = AvatarLabel()
+        self.avatar.setFixedSize(200, 200)
+        self.avatar.setStyleSheet('''
             background-color: #f6f8fa;
             border: 1px solid #d0d7de;
             border-radius: 100px;
         ''')
+        self.avatar.setAlignment(Qt.AlignCenter)
         
         avatar_url = self.user_data.get('avatar_url', '')
         if avatar_url:
-            try:
-                from PyQt5.QtGui import QPixmap, QNetworkAccessManager, QNetworkRequest
-                pixmap = QPixmap()
-                pixmap.loadFromData(QNetworkAccessManager().get(QNetworkRequest(QUrl(avatar_url))).readAll())
-                avatar.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            except Exception:
-                pass
+            self.avatar.load_image(avatar_url)
+        else:
+            self.avatar.setText('No Avatar')
+            self.avatar.setStyleSheet('color: #57606a;')
         
-        info_layout.addWidget(avatar)
+        info_layout.addWidget(self.avatar)
 
         info_widget = QWidget()
         info_layout_inner = QVBoxLayout(info_widget)
@@ -762,6 +885,12 @@ class ProfileView(QWidget):
         name_label = QLabel(name)
         name_label.setFont(QFont('Arial', 24, QFont.Bold))
         info_layout_inner.addWidget(name_label)
+
+        login = self.user_data.get('login', '')
+        if login:
+            login_label = QLabel(f'@{login}')
+            login_label.setStyleSheet(f'color: {GitHubColors.TEXT_SECONDARY};')
+            info_layout_inner.addWidget(login_label)
 
         bio = self.user_data.get('bio')
         if bio:
@@ -780,11 +909,36 @@ class ProfileView(QWidget):
         following = self.user_data.get('following', 0)
         repos = self.user_data.get('public_repos', 0)
 
-        stats_layout.addWidget(QLabel(f'👥 {followers} 关注者'))
-        stats_layout.addWidget(QLabel(f'👤 {following} 正在关注'))
-        stats_layout.addWidget(QLabel(f'📦 {repos} 公开仓库'))
+        stats_layout.addWidget(QLabel(f'{followers} 关注者'))
+        stats_layout.addWidget(QLabel(f'{following} 正在关注'))
+        stats_layout.addWidget(QLabel(f'{repos} 公开仓库'))
         stats_layout.addStretch()
         layout.addLayout(stats_layout)
+
+        extra_layout = QHBoxLayout()
+        extra_layout.setSpacing(20)
+        
+        company = self.user_data.get('company')
+        location = self.user_data.get('location')
+        email = self.user_data.get('email')
+        blog = self.user_data.get('blog')
+        
+        if company:
+            extra_layout.addWidget(QLabel(f'[C] {company}'))
+        if location:
+            extra_layout.addWidget(QLabel(f'[L] {location}'))
+        if email:
+            extra_layout.addWidget(QLabel(f'[E] {email}'))
+        if blog:
+            extra_layout.addWidget(QLabel(f'[W] {blog}'))
+        
+        extra_layout.addStretch()
+        layout.addLayout(extra_layout)
+
+        created_at = self.user_data.get('created_at', '')
+        if created_at:
+            created_date = created_at[:10]
+            layout.addWidget(QLabel(f'成员于 {created_date} 加入'))
 
         layout.addStretch()
 
@@ -900,8 +1054,8 @@ class MainWindow(QMainWindow):
                     background-color: #f6f8fa;
                 }
             ''')
-            tabs.addTab(repos_view, f'📁 {get_text("repositories_tab")}')
-            tabs.addTab(profile_view, f'👤 {get_text("profile_tab")}')
+            tabs.addTab(repos_view, f'[R] {get_text("repositories_tab")}')
+            tabs.addTab(profile_view, f'[P] {get_text("profile_tab")}')
             self.content_stack.addWidget(tabs)
 
             return True
@@ -923,10 +1077,19 @@ class MainWindow(QMainWindow):
             self.show_login_dialog()
 
     def open_repository_detail(self, repo):
-        detail_view = RepositoryDetailView(self.api, repo)
+        detail_view = RepositoryDetailView(self.api, repo, on_back=self.go_back)
         self.repo_stack.append(self.content_stack.currentWidget())
         self.content_stack.addWidget(detail_view)
         self.content_stack.setCurrentIndex(self.content_stack.count() - 1)
+
+    def go_back(self):
+        if len(self.repo_stack) > 0:
+            current = self.content_stack.currentWidget()
+            self.content_stack.removeWidget(current)
+            current.deleteLater()
+            prev_widget = self.repo_stack.pop()
+            self.content_stack.addWidget(prev_widget)
+            self.content_stack.setCurrentWidget(prev_widget)
 
     def show_login_dialog(self):
         dialog = LoginDialog(self)
@@ -944,12 +1107,21 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 
+    app.setOrganizationName('GitHubClient')
+    app.setApplicationName('GitHub Client')
+
     app.setStyleSheet('''
         QMainWindow {
             background-color: #ffffff;
         }
         QLabel {
             color: #24292f;
+        }
+        QTableWidget::item {
+            padding: 8px;
+        }
+        QTreeWidget::item {
+            padding: 6px;
         }
     ''')
 
