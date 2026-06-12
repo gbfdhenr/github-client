@@ -10,15 +10,33 @@ permissions:
   contents: write
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read-ver.outputs.version }}
+      description: ${{ steps.read-desc.outputs.description }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Read version
+        id: read-ver
+        run: echo "version=$(cat ver.txt | tr -d '\r\n')" >> $GITHUB_OUTPUT
+      
+      - name: Read description
+        id: read-desc
+        run: |
+          if [ -f desc.txt ]; then
+            desc=$(cat desc.txt | tr -d '\r\n')
+            echo "description=$desc" >> $GITHUB_OUTPUT
+          else
+            echo "description=Release v${{ steps.read-ver.outputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
   build-windows:
+    needs: get-version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read version
-        id: version
-        run: echo "version=$(cat ver.txt)" >> $GITHUB_OUTPUT
-        shell: bash
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,12 +44,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        shell: bash
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
       - name: Build with PyInstaller
+        shell: bash
         run: |
           pyinstaller --onefile --windowed --name "GitHubClient" main.py
 
@@ -42,13 +62,10 @@ jobs:
           path: dist/GitHubClient.exe
 
   build-linux:
+    needs: get-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read version
-        id: version
-        run: echo "version=$(cat ver.txt)" >> $GITHUB_OUTPUT
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -72,14 +89,10 @@ jobs:
           path: dist/GitHubClient
 
   build-macos:
+    needs: get-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read version
-        id: version
-        run: echo "version=$(cat ver.txt)" >> $GITHUB_OUTPUT
-        shell: bash
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -103,34 +116,20 @@ jobs:
           path: dist/GitHubClient.app
 
   release:
-    needs: [build-windows, build-linux, build-macos]
+    needs: [get-version, build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Read version
-        id: version
-        run: echo "version=$(cat ver.txt)" >> $GITHUB_OUTPUT
-
-      - name: Read description
-        id: desc
-        run: |
-          if [ -f desc.txt ]; then
-            echo "description=$(cat desc.txt)" >> $GITHUB_OUTPUT
-          else
-            echo "description=Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: GitHubClient v${{ steps.version.outputs.version }}
-          body: ${{ steps.desc.outputs.description }}
+          tag_name: v${{ needs.get-version.outputs.version }}
+          name: GitHubClient v${{ needs.get-version.outputs.version }}
+          body: ${{ needs.get-version.outputs.description }}
           files: |
             artifacts/GitHubClient-Windows-x64.exe/GitHubClient.exe
             artifacts/GitHubClient-Linux-x64/GitHubClient
