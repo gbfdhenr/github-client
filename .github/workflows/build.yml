@@ -42,7 +42,10 @@ jobs:
         shell: bash
         run: |
           choco install openssl -y
-          echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
+          OPENSSL_DIR="C:/Program Files/OpenSSL"
+          echo "OPENSSL_ROOT_DIR=${OPENSSL_DIR}" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=${OPENSSL_DIR}/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=${OPENSSL_DIR}/lib" >> "$GITHUB_ENV"
 
       - name: Install SQLite3
         shell: bash
@@ -57,6 +60,9 @@ jobs:
           cmake -B build -G "Visual Studio 17 2022" -A x64 \
             -DCMAKE_BUILD_TYPE=Release \
             -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" \
+            -DOPENSSL_INCLUDE_DIR="$OPENSSL_INCLUDE_DIR" \
+            -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_LIB_DIR/libcrypto.lib" \
+            -DOPENSSL_SSL_LIBRARY="$OPENSSL_LIB_DIR/libssl.lib" \
             -DSQLite3_INCLUDE_DIR="$SQLITE3_ROOT" \
             -DSQLite3_LIBRARY="$SQLITE3_ROOT/sqlite3.lib"
 
@@ -69,10 +75,7 @@ jobs:
         run: |
           windeployqt --release --no-translations build/Release/GitHubClient.exe
           cp "$SQLITE3_ROOT/sqlite3.dll" build/Release/
-          cp "$OPENSSL_ROOT_DIR/bin/libcrypto-3-x64.dll" build/Release/ 2>/dev/null || \
-            cp "$OPENSSL_ROOT_DIR/bin/libcrypto*.dll" build/Release/
-          cp "$OPENSSL_ROOT_DIR/bin/libssl-3-x64.dll" build/Release/ 2>/dev/null || \
-            cp "$OPENSSL_ROOT_DIR/bin/libssl*.dll" build/Release/
+          cp "$OPENSSL_ROOT_DIR/bin/"*.dll build/Release/ 2>/dev/null || true
 
       - name: Package as zip
         shell: bash
