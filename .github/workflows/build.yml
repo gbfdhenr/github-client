@@ -81,8 +81,9 @@ jobs:
         shell: bash
         run: |
           dotnet tool install --global wix
+          dotnet tool install --global WixToolset.Heat
           export PATH="$HOME/.dotnet/tools:$PATH"
-          wix harvest dir build/Release -out packaging/ApplicationComponents.wxs -generate componentgroup:ApplicationComponents
+          heat dir build/Release -out packaging/ApplicationComponents.wxs -generate componentgroup:ApplicationComponents -dr INSTALLFOLDER
           wix build packaging/GitHubClient.wxs packaging/ApplicationComponents.wxs -o GitHubClient.msi -arch x64
 
       - name: Upload artifact
