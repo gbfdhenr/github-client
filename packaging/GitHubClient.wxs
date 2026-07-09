@@ -1,44 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
-  <Package Name="GitHub Client"
+  <Product Id="*"
+           Name="GitHub Client"
            Manufacturer="gbfdhenr"
            Version="0.0.2.0"
            UpgradeCode="8A9F2E3D-5B1C-4A7E-9F3D-2C8B6A1E4D7F"
-           Scope="perUser"
-           Compressed="yes">
+           Language="1033">
+
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
-    <Icon Id="app.ico" SourceFile="app.ico" />
-
-    <StandardDirectory Id="LocalAppDataFolder">
-      <Directory Id="INSTALLFOLDER" Name="GitHubClient" />
-    </StandardDirectory>
-
-    <StandardDirectory Id="DesktopFolder">
-      <Component Id="DesktopShortcut" Guid="B1C3D5E7-9F2A-4B6C-8D0E-1F3A5B7C9D2E">
-        <Shortcut Id="DesktopSC" Name="GitHub Client" Target="[INSTALLFOLDER]GitHubClient.exe" WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKCU" Key="Software\gbfdhenr\GitHubClient" Name="desktop" Value="1" Type="integer" KeyPath="yes" />
-      </Component>
-    </StandardDirectory>
-
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="StartMenuDir" Name="GitHub Client">
-        <Component Id="StartMenuShortcut" Guid="D4E6F8A0-1B3C-5D7E-9F0A-2B4C6D8E0F1A">
-          <Shortcut Id="StartMenuSC" Name="GitHub Client" Target="[INSTALLFOLDER]GitHubClient.exe" WorkingDirectory="INSTALLFOLDER" />
-          <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
-          <RegistryValue Root="HKCU" Key="Software\gbfdhenr\GitHubClient" Name="startmenu" Value="1" Type="integer" KeyPath="yes" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="GitHubClient" />
+      </Directory>
+      <Directory Id="DesktopFolder">
+        <Component Id="DesktopShortcut" Guid="B1C3D5E7-9F2A-4B6C-8D0E-1F3A5B7C9D2E">
+          <Shortcut Id="DesktopSC" Name="GitHub Client" Target="[INSTALLFOLDER]GitHubClient.exe" WorkingDirectory="INSTALLFOLDER" />
+          <RegistryValue Root="HKCU" Key="Software\gbfdhenr\GitHubClient" Name="desktop" Value="1" Type="integer" KeyPath="yes" />
         </Component>
       </Directory>
-    </StandardDirectory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="StartMenuDir" Name="GitHub Client">
+          <Component Id="StartMenuShortcut" Guid="D4E6F8A0-1B3C-5D7E-9F0A-2B4C6D8E0F1A">
+            <Shortcut Id="StartMenuSC" Name="GitHub Client" Target="[INSTALLFOLDER]GitHubClient.exe" WorkingDirectory="INSTALLFOLDER" />
+            <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\gbfdhenr\GitHubClient" Name="startmenu" Value="1" Type="integer" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
 
-    <ComponentGroupRef Id="ApplicationComponents" />
     <Feature Id="MainFeature" Title="GitHub Client" Level="1">
       <ComponentRef Id="DesktopShortcut" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentGroupRef Id="ApplicationComponents" />
     </Feature>
-  </Package>
+  </Product>
 </Wix>

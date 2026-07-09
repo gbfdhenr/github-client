@@ -77,14 +77,19 @@ jobs:
           cp "$SQLITE3_ROOT/sqlite3.dll" build/Release/
           cp "$OPENSSL_ROOT_DIR/bin/"*.dll build/Release/ 2>/dev/null || true
 
-      - name: Build MSI installer
-        shell: bash
+      - name: Install WiX Toolset
+        shell: pwsh
         run: |
-          dotnet tool install --global wix
-          dotnet tool install --global WixToolset.Heat
-          export PATH="$HOME/.dotnet/tools:$PATH"
-          heat dir build/Release -out packaging/ApplicationComponents.wxs -generate componentgroup:ApplicationComponents -dr INSTALLFOLDER
-          wix build packaging/GitHubClient.wxs packaging/ApplicationComponents.wxs -o GitHubClient.msi -arch x64
+          choco install wixtoolset -y
+          $wix = Get-ChildItem "C:\Program Files (x86)\WiX Toolset v3.*" -Directory | Select-Object -First 1
+          "$($wix.FullName)\bin" | Out-File -Append -Encoding UTF8 $env:GITHUB_PATH
+
+      - name: Build MSI installer
+        shell: cmd
+        run: |
+          heat dir build\Release -dr INSTALLFOLDER -cg ApplicationComponents -gg -sfrag -out packaging\ApplicationComponents.wxs
+          candle packaging\GitHubClient.wxs packaging\ApplicationComponents.wxs -arch x64
+          light GitHubClient.wixobj ApplicationComponents.wixobj -out GitHubClient.msi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
