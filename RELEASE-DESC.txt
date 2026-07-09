@@ -1,0 +1,9 @@
+GitHub Client - C++/Qt5 native GitHub desktop client with dark theme.
+
+Features:
+- Repository browsing with loading spinners
+- Cookie-based authentication (Chrome/Firefox)
+- Dark theme matching github.com
+
+- **Windows**: unzip and run `GitHubClient.exe`
+- **Linux**: `sudo dpkg -i githubclient_*.deb` then run `githubclient`

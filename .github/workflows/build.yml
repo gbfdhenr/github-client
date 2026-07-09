@@ -192,6 +192,17 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Read release description
+        id: release-desc
+        run: |
+          desc=$(cat RELEASE-DESC.txt)
+          desc="${desc//$'\n'/\\n}"
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$desc" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -205,15 +216,7 @@ jobs:
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
           name: GitHubClient v${{ needs.get-version.outputs.version }} (${{ needs.get-version.outputs.short_sha }})
-          body: |
-            ## GitHub Client v${{ needs.get-version.outputs.version }}
-
-            C++/Qt5 native GitHub desktop client.
-
-            - **Windows**: unzip and run `GitHubClient.exe`
-            - **Linux**: `sudo dpkg -i githubclient_*.deb` then run `githubclient`
-
-            Built from ${{ github.sha }}
+          body: ${{ steps.release-desc.outputs.body }}
           files: |
             artifacts/**/*
           prerelease: true
