@@ -77,18 +77,19 @@ jobs:
           cp "$SQLITE3_ROOT/sqlite3.dll" build/Release/
           cp "$OPENSSL_ROOT_DIR/bin/"*.dll build/Release/ 2>/dev/null || true
 
-      - name: Package as zip
+      - name: Build MSI installer
         shell: bash
         run: |
-          cd build/Release
-          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll platforms/ styles/ imageformats/ 2>/dev/null || true
-          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll 2>/dev/null || true
+          dotnet tool install --global wix
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          wix harvest dir build/Release -out packaging/ApplicationComponents.wxs -generate componentgroup:ApplicationComponents
+          wix build packaging/GitHubClient.wxs packaging/ApplicationComponents.wxs -o GitHubClient.msi -arch x64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitHubClient-Windows-x64
-          path: GitHubClient-Windows-x64.zip
+          path: GitHubClient.msi
 
   build-linux-deb:
     needs: get-version

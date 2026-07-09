@@ -5,5 +5,5 @@ Features:
 - Cookie-based authentication (Chrome/Firefox)
 - Dark theme matching github.com
 
-- **Windows**: unzip and run `GitHubClient.exe`
+- **Windows**: run `GitHubClient.msi` installer
 - **Linux**: `sudo dpkg -i githubclient_*.deb` then run `githubclient`
