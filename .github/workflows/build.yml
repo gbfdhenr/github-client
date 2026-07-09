@@ -19,7 +19,7 @@ jobs:
       - name: Extract version from CMakeLists.txt
         id: read-cmake
         run: |
-          printf 'version=%s\n' "$(grep -oP 'VERSION \K[0-9.]+' CMakeLists.txt | head -1)" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$(grep -oP 'project\([^)]+VERSION \K[0-9.]+' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
           printf 'short_sha=%s\n' "$(printf '%s' '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
   build-windows:
@@ -198,10 +198,8 @@ jobs:
       - name: Read release description
         id: release-desc
         run: |
-          desc=$(cat RELEASE-DESC.txt)
-          desc="${desc//$'\n'/\\n}"
           echo "body<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$desc" >> "$GITHUB_OUTPUT"
+          cat RELEASE-DESC.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
