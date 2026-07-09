@@ -21,8 +21,10 @@ jobs:
         run: |
           version=$(grep -oP 'VERSION \K[0-9.]+' CMakeLists.txt)
           sha=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${version}-${sha}" >> $GITHUB_OUTPUT
-          echo "short_sha=${sha}" >> $GITHUB_OUTPUT
+          {
+            echo "version=${version}"
+            echo "short_sha=${sha}"
+          } >> "$GITHUB_OUTPUT"
 
   build-windows:
     needs: get-version
@@ -115,7 +117,8 @@ jobs:
         id: deb
         run: |
           VERSION="${{ needs.get-version.outputs.version }}"
-          DEB_NAME="githubclient_${VERSION}_amd64"
+          SHA="${{ needs.get-version.outputs.short_sha }}"
+          DEB_NAME="githubclient_${VERSION}.${SHA}_amd64"
           DEB_ROOT="packaging/${DEB_NAME}"
 
           mkdir -p ${DEB_ROOT}/DEBIAN
@@ -240,7 +243,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
-          name: GitHubClient v${{ needs.get-version.outputs.version }}
+          name: GitHubClient v${{ needs.get-version.outputs.version }} (${{ needs.get-version.outputs.short_sha }})
           body: |
             ## GitHub Client v${{ needs.get-version.outputs.version }}
 
