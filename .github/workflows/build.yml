@@ -19,12 +19,8 @@ jobs:
       - name: Extract version from CMakeLists.txt
         id: read-cmake
         run: |
-          version=$(grep -oP 'VERSION \K[0-9.]+' CMakeLists.txt)
-          sha=$(echo "${{ github.sha }}" | cut -c1-7)
-          {
-            echo "version=${version}"
-            echo "short_sha=${sha}"
-          } >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$(grep -oP 'VERSION \K[0-9.]+' CMakeLists.txt | head -1)" >> "$GITHUB_OUTPUT"
+          printf 'short_sha=%s\n' "$(printf '%s' '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
   build-windows:
     needs: get-version
