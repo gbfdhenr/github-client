@@ -25,9 +25,6 @@ jobs:
   build-windows:
     needs: get-version
     runs-on: windows-2022
-    strategy:
-      matrix:
-        arch: [x64]
     steps:
       - uses: actions/checkout@v4
 
@@ -42,21 +39,23 @@ jobs:
         shell: bash
         run: |
           choco install openssl -y
-          OPENSSL_DIR="C:/Program Files/OpenSSL"
-          echo "OPENSSL_ROOT_DIR=${OPENSSL_DIR}" >> "$GITHUB_ENV"
-          echo "OPENSSL_INCLUDE_DIR=${OPENSSL_DIR}/include" >> "$GITHUB_ENV"
-          echo "OPENSSL_LIB_DIR=${OPENSSL_DIR}/lib" >> "$GITHUB_ENV"
+          echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL" >> "$GITHUB_ENV"
 
-      - name: Install SQLite3
+      - name: Download SQLite3
         shell: bash
         run: |
-          curl -L -o sqlite-dll.zip https://www.sqlite.org/2025/sqlite-dll-win-x64-3490100.zip
-          curl -L -o sqlite-src.zip https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip
-          unzip sqlite-dll.zip -d sqlite3
-          unzip -j sqlite-src.zip -d sqlite3
-          cd sqlite3
-          lib /def:sqlite3.def /out:sqlite3.lib /machine:x64
-          echo "SQLITE3_ROOT=${{ github.workspace }}/sqlite3" >> $GITHUB_ENV
+          curl -fsSL -o sqlite-dll.zip https://www.sqlite.org/2025/sqlite-dll-win-x64-3490100.zip
+          curl -fsSL -o sqlite-src.zip https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip
+          mkdir -p sqlite3
+          unzip -o sqlite-dll.zip -d sqlite3
+          unzip -o -j sqlite-src.zip -d sqlite3
+
+      - name: Build SQLite3 import library
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          lib /def:sqlite3\sqlite3.def /out:sqlite3\sqlite3.lib /machine:x64
+          echo SQLITE3_ROOT=%CD%\sqlite3>> %GITHUB_ENV%
 
       - name: Configure CMake
         shell: bash
@@ -64,9 +63,6 @@ jobs:
           cmake -B build -G "Visual Studio 17 2022" -A x64 \
             -DCMAKE_BUILD_TYPE=Release \
             -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" \
-            -DOPENSSL_INCLUDE_DIR="$OPENSSL_INCLUDE_DIR" \
-            -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_LIB_DIR/libcrypto.lib" \
-            -DOPENSSL_SSL_LIBRARY="$OPENSSL_LIB_DIR/libssl.lib" \
             -DSQLite3_INCLUDE_DIR="$SQLITE3_ROOT" \
             -DSQLite3_LIBRARY="$SQLITE3_ROOT/sqlite3.lib"
 
@@ -85,10 +81,10 @@ jobs:
         shell: bash
         run: |
           cd build/Release
-          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll platforms/ styles/ imageformats/ 2>/dev/null
-          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll 2>/dev/null
+          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll platforms/ styles/ imageformats/ 2>/dev/null || true
+          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll 2>/dev/null || true
 
-      - name: Upload Windows artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitHubClient-Windows-x64
