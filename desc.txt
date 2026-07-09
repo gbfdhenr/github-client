@@ -1,1 +1,0 @@
-🖥️ 原生 PyQt5 GitHub 桌面客户端，自动从浏览器导入 Cookie，跨 Windows/Linux 平台，所有数据来自 github.com API，MIT 许可
