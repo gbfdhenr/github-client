@@ -87,8 +87,8 @@ jobs:
       - name: Build MSI installer
         shell: cmd
         run: |
-          heat dir build\Release -srd -dr INSTALLFOLDER -cg ApplicationComponents -gg -sfrag -out packaging\ApplicationComponents.wxs
-          candle packaging\GitHubClient.wxs packaging\ApplicationComponents.wxs -arch x64
+          heat dir build\Release -dr INSTALLFOLDER -cg ApplicationComponents -gg -sfrag -var var.SourceDir -out packaging\ApplicationComponents.wxs
+          candle packaging\GitHubClient.wxs packaging\ApplicationComponents.wxs -arch x64 -dSourceDir=build\Release
           light -b build\Release GitHubClient.wixobj ApplicationComponents.wixobj -out GitHubClient.msi
 
       - name: Upload artifact
