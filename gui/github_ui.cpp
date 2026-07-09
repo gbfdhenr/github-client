@@ -5,6 +5,7 @@
 #include <QMessageBox>
 #include <QFont>
 #include <QColor>
+#include <QPainter>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QPixmap>
@@ -16,1113 +17,1163 @@
 #include <QHeaderView>
 #include <QScrollBar>
 #include <QDialogButtonBox>
+#include <QtMath>
+
+namespace GH = GitHubColors;
+
+// ─── SpinnerWidget ──────────────────────────────────────────────────────────
+
+SpinnerWidget::SpinnerWidget(QWidget *parent, int size)
+    : QWidget(parent), m_angle(0), m_size(size), m_timer(new QTimer(this))
+{
+    setFixedSize(size, size);
+    connect(m_timer, &QTimer::timeout, this, [this]() {
+        m_angle = (m_angle + 30) % 360;
+        update();
+    });
+}
+
+void SpinnerWidget::start() { m_timer->start(50); }
+void SpinnerWidget::stop() { m_timer->stop(); }
+
+void SpinnerWidget::paintEvent(QPaintEvent *)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    int w = m_size, n = 12;
+    for (int i = 0; i < n; ++i) {
+        qreal alpha = 1.0 - (qreal)i / n;
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(139, 148, 158, (int)(alpha * 255)));
+        qreal rad = qDegreesToRadians((qreal)(m_angle + i * 360 / n));
+        int cx = w / 2 + (int)((w / 2 - 6) * qCos(rad));
+        int cy = w / 2 + (int)((w / 2 - 6) * qSin(rad));
+        p.drawEllipse(QPoint(cx, cy), 3, 3);
+    }
+}
+
+// ─── LoadingLabel ───────────────────────────────────────────────────────────
+
+LoadingLabel::LoadingLabel(const QString &text, QWidget *parent)
+    : QWidget(parent)
+{
+    auto *lay = new QVBoxLayout(this);
+    lay->setAlignment(Qt::AlignCenter);
+    m_spinner = new SpinnerWidget(this, 32);
+    m_label = new QLabel(text);
+    m_label->setAlignment(Qt::AlignCenter);
+    m_label->setStyleSheet(QString("color: %1; font-size: 15px;").arg(GH::TEXT_SECONDARY));
+    lay->addWidget(m_spinner, 0, Qt::AlignCenter);
+    lay->addWidget(m_label);
+    m_spinner->start();
+}
+
+void LoadingLabel::setLoadingText(const QString &text) { m_label->setText(text); }
+
+// ─── ClickableFrame ─────────────────────────────────────────────────────────
+
+ClickableFrame::ClickableFrame(QWidget *parent) : QFrame(parent)
+{
+    setCursor(Qt::PointingHandCursor);
+}
+
+// ─── NavButton ──────────────────────────────────────────────────────────────
+
+NavButton::NavButton(const QString &text, QWidget *parent) : QPushButton(text, parent)
+{
+    setFlat(true);
+    setCursor(Qt::PointingHandCursor);
+    setStyleSheet(QString(R"(
+        QPushButton { color: %1; font-size: 14px; font-weight: 500; padding: 4px 8px; }
+        QPushButton:hover { color: %2; }
+    )").arg(GH::HEADER_TEXT, GH::TEXT_SECONDARY));
+}
+
+// ─── Common Styles ──────────────────────────────────────────────────────────
+
+static const char *navDropdownStyle = R"(
+    QPushButton { color: #e6edf3; font-size: 14px; font-weight: 500;
+                  background: transparent; border: none; padding: 6px 10px; }
+    QPushButton:hover { color: #8b949e; }
+)";
+
+static const char *blueBtn = R"(
+    QPushButton { background: #1f6feb; color: #fff; border: none; border-radius: 6px;
+                  padding: 7px 18px; font-size: 14px; font-weight: 600; }
+    QPushButton:hover { background: #388bfd; }
+)";
+
+static const char *outlineBtn = R"(
+    QPushButton { background: transparent; color: #c9d1d9; border: 1px solid #30363d;
+                  border-radius: 6px; padding: 7px 18px; font-size: 14px; font-weight: 600; }
+    QPushButton:hover { color: #f0f6fc; border-color: #8b949e; }
+)";
+
+static const char *greenBtn = R"(
+    QPushButton { background: #238636; color: #fff; border: none; border-radius: 6px;
+                  padding: 8px 20px; font-size: 15px; font-weight: 600; }
+    QPushButton:hover { background: #2ea043; }
+)";
+
+static const char *largeGreenBtn = R"(
+    QPushButton { background: #238636; color: #fff; border: none; border-radius: 6px;
+                  padding: 12px 32px; font-size: 16px; font-weight: 600; }
+    QPushButton:hover { background: #2ea043; }
+)";
 
 static const char *cardStyle = R"(
-    QFrame {
-        background-color: white;
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-    }
-    QFrame:hover {
-        border-color: #0969da;
-    }
+    QFrame { background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+    QFrame:hover { border-color: #58a6ff; }
 )";
 
-static const char *treeStyle = R"(
-    QTreeWidget {
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-    }
-    QHeaderView::section {
-        background-color: #f6f8fa;
-        padding: 8px;
-        border: none;
-        border-bottom: 1px solid #d0d7de;
-        font-weight: bold;
-    }
+static const char *inputDark = R"(
+    QLineEdit { padding: 10px 14px; background: #0d1117; color: #e6edf3;
+                border: 1px solid #30363d; border-radius: 6px; font-size: 15px; }
+    QLineEdit:focus { border-color: #58a6ff; }
 )";
 
-static const char *tableStyle = R"(
-    QTableWidget {
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-        gridline-color: #f6f8fa;
-    }
-    QHeaderView::section {
-        background-color: #f6f8fa;
-        padding: 8px;
-        border: none;
-        border-bottom: 1px solid #d0d7de;
-        font-weight: bold;
-    }
+static const char *signInInput = R"(
+    QLineEdit { padding: 8px 14px; background: #0d1117; color: #e6edf3;
+                border: 1px solid #30363d; border-radius: 6px; font-size: 14px; }
+    QLineEdit:focus { border-color: #1f6feb; }
 )";
 
-static const char *primaryBtnStyle = R"(
-    QPushButton {
-        background-color: #2da44e;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: bold;
-    }
-    QPushButton:hover {
-        background-color: #2c974b;
-    }
+static const char *tableDark = R"(
+    QTableWidget { background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+                   gridline-color: #21262d; color: #e6edf3; }
+    QHeaderView::section { background: #0d1117; color: #e6edf3; padding: 10px 14px;
+                           border: none; border-bottom: 1px solid #30363d; font-weight: 600; }
+    QTableWidget::item { padding: 10px 14px; }
 )";
 
-static const char *secondaryBtnStyle = R"(
-    QPushButton {
-        padding: 8px 16px;
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-        background-color: #f6f8fa;
-    }
-    QPushButton:hover {
-        background-color: #e5e7eb;
-    }
+static const char *treeDark = R"(
+    QTreeWidget { background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+                  color: #e6edf3; }
+    QHeaderView::section { background: #0d1117; color: #e6edf3; padding: 10px 14px;
+                           border: none; border-bottom: 1px solid #30363d; font-weight: 600; }
+    QTreeWidget::item { padding: 8px 14px; }
+    QTreeWidget::item:hover { background: #1c2128; }
 )";
 
-static const char *inputStyle = R"(
-    QLineEdit {
-        padding: 8px;
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-        font-size: 14px;
-    }
-    QLineEdit:focus {
-        border-color: #0969da;
-        outline: none;
-    }
-)";
+// ─── HomePage ───────────────────────────────────────────────────────────────
 
-static const char *blueBtnStyle = R"(
-    QPushButton {
-        padding: 5px 15px;
-        border: 1px solid #0969da;
-        border-radius: 6px;
-        background-color: #0969da;
-        color: white;
-    }
-    QPushButton:hover {
-        background-color: #0856b6;
-    }
-)";
+HomePage::HomePage(QWidget *parent) : QWidget(parent) { setupUi(); }
 
-static const char *greenBtnStyle = R"(
-    QPushButton {
-        background-color: #2da44e;
-        color: white;
-        padding: 8px 16px;
-        border: none;
-        border-radius: 6px;
-    }
-    QPushButton:hover {
-        background-color: #2c974b;
-    }
-)";
-
-// ─── AvatarLabel ────────────────────────────────────────────────────────────
-
-AvatarLabel::AvatarLabel(QWidget *parent)
-    : QLabel(parent)
-    , m_networkManager(new QNetworkAccessManager(this))
+void HomePage::setupUi()
 {
+    auto *main = new QVBoxLayout(this);
+    main->setContentsMargins(0, 0, 0, 0);
+    main->setSpacing(0);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+
+    auto *wrap = new QWidget();
+    wrap->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(wrap);
+    lay->setContentsMargins(0, 0, 0, 0);
+    lay->setSpacing(0);
+
+    // Hero section
+    auto *hero = new QWidget();
+    hero->setMinimumHeight(520);
+    hero->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *heroLay = new QVBoxLayout(hero);
+    heroLay->setAlignment(Qt::AlignCenter);
+    heroLay->setSpacing(24);
+
+    auto *tagBadge = new QLabel("  The world's leading AI-powered developer platform  ");
+    tagBadge->setStyleSheet("color: #8b949e; font-size: 13px; border: 1px solid #30363d; "
+                            "border-radius: 20px; padding: 5px 16px; background: #161b22;");
+    tagBadge->setAlignment(Qt::AlignCenter);
+    auto *badgeWrap = new QHBoxLayout();
+    badgeWrap->setAlignment(Qt::AlignCenter);
+    badgeWrap->addWidget(tagBadge);
+    heroLay->addLayout(badgeWrap);
+
+    auto *title = new QLabel("Change is constant.\nGitHub keeps you ahead.");
+    title->setFont(QFont("Arial", 40, QFont::Bold));
+    title->setAlignment(Qt::AlignCenter);
+    title->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    heroLay->addWidget(title);
+
+    auto *sub = new QLabel("Millions of developers, businesses, and the largest open source\n"
+                           "community build software that advances humanity.");
+    sub->setAlignment(Qt::AlignCenter);
+    sub->setStyleSheet(QString("color: %1; font-size: 18px; line-height: 1.6;").arg(GH::TEXT_SECONDARY));
+    heroLay->addWidget(sub);
+
+    auto *btnRow = new QHBoxLayout();
+    btnRow->setAlignment(Qt::AlignCenter);
+    btnRow->setSpacing(16);
+    auto *signInBtn = new QPushButton("Sign in");
+    signInBtn->setStyleSheet(outlineBtn);
+    signInBtn->setFixedWidth(160);
+    connect(signInBtn, &QPushButton::clicked, this, &HomePage::signInClicked);
+    btnRow->addWidget(signInBtn);
+
+    auto *signUpBtn = new QPushButton("Sign up");
+    signUpBtn->setStyleSheet(blueBtn);
+    signUpBtn->setFixedWidth(160);
+    connect(signUpBtn, &QPushButton::clicked, this, &HomePage::signUpClicked);
+    btnRow->addWidget(signUpBtn);
+    heroLay->addLayout(btnRow);
+
+    // Search bar placeholder
+    auto *searchRow = new QHBoxLayout();
+    searchRow->setAlignment(Qt::AlignCenter);
+    auto *searchBox = new QFrame();
+    searchBox->setFixedSize(500, 50);
+    searchBox->setStyleSheet("background: #0d1117; border: 1px solid #30363d; border-radius: 6px;");
+    auto *searchInner = new QHBoxLayout(searchBox);
+    auto *searchHint = new QLabel("  Search or jump to...");
+    searchHint->setStyleSheet("color: #484f58; font-size: 14px;");
+    searchInner->addWidget(searchHint);
+    searchInner->addStretch();
+    searchRow->addWidget(searchBox);
+    heroLay->addLayout(searchRow);
+
+    lay->addWidget(hero);
+
+    // Section divider
+    auto *div = new QFrame();
+    div->setFixedHeight(1);
+    div->setStyleSheet("background: #21262d;");
+    lay->addWidget(div);
+
+    // Feature sections with loading spinners
+    auto *featWrap = new QWidget();
+    featWrap->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *featLay = new QHBoxLayout(featWrap);
+    featLay->setSpacing(24);
+    featLay->setContentsMargins(60, 60, 60, 60);
+
+    for (int i = 0; i < 3; ++i) {
+        auto *card = new QFrame();
+        card->setStyleSheet("background: #161b22; border: 1px solid #30363d; border-radius: 12px;");
+        card->setMinimumHeight(280);
+        auto *cardLay = new QVBoxLayout(card);
+        cardLay->setAlignment(Qt::AlignCenter);
+        cardLay->setSpacing(16);
+
+        auto *iconColor = (i == 0) ? "#58a6ff" : (i == 1) ? "#3fb950" : "#a371f7";
+        auto *icon = new QLabel();
+        icon->setFixedSize(48, 48);
+        icon->setStyleSheet(QString("background: %1; border-radius: 12px;").arg(iconColor));
+        icon->setAlignment(Qt::AlignCenter);
+        cardLay->addWidget(icon, 0, Qt::AlignCenter);
+
+        auto *ld = new LoadingLabel("Connecting...", card);
+        cardLay->addWidget(ld);
+        featLay->addWidget(card);
+    }
+    lay->addWidget(featWrap);
+
+    // Bottom divider
+    auto *div2 = new QFrame();
+    div2->setFixedHeight(1);
+    div2->setStyleSheet("background: #21262d;");
+    lay->addWidget(div2);
+
+    // Bottom links
+    auto *footer = new QWidget();
+    footer->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *footerLay = new QHBoxLayout(footer);
+    footerLay->setContentsMargins(40, 24, 40, 24);
+    QStringList links = {"Help", "Status", "API", "Training", "About", "Blog", "Terms", "Privacy"};
+    for (const auto &l : links) {
+        auto *linkBtn = new QPushButton(l);
+        linkBtn->setFlat(true);
+        linkBtn->setCursor(Qt::PointingHandCursor);
+        linkBtn->setStyleSheet(QString("color: %1; font-size: 12px;").arg(GH::LINK));
+        connect(linkBtn, &QPushButton::clicked, this, []() {});
+        footerLay->addWidget(linkBtn);
+    }
+    footerLay->addStretch();
+    lay->addWidget(footer);
+
+    auto *scroll = new QScrollArea();
+    scroll->setWidget(wrap);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet(QString("QScrollArea { background: %1; border: none; }").arg(GH::MAIN_BG));
+    main->addWidget(scroll);
 }
 
-void AvatarLabel::loadImage(const QString &url)
+// ─── SignInPage ─────────────────────────────────────────────────────────────
+
+SignInPage::SignInPage(QWidget *parent) : QWidget(parent) { setupUi(); }
+
+void SignInPage::setupUi()
 {
-    if (url.isEmpty()) return;
-    QNetworkRequest request{QUrl(url)};
-    QNetworkReply *reply = m_networkManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() { onImageLoaded(reply); });
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *wrap = new QVBoxLayout(this);
+    wrap->setAlignment(Qt::AlignCenter);
+
+    auto *box = new QFrame();
+    box->setFixedWidth(380);
+    box->setStyleSheet("background: #161b22; border: 1px solid #30363d; border-radius: 12px;");
+    auto *lay = new QVBoxLayout(box);
+    lay->setContentsMargins(28, 28, 28, 28);
+    lay->setSpacing(16);
+
+    auto *title = new QLabel("Sign in to GitHub Client");
+    title->setAlignment(Qt::AlignCenter);
+    title->setFont(QFont("Arial", 16, QFont::Bold));
+    title->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    lay->addWidget(title);
+
+    auto *tokenLabel = new QLabel("Personal access token");
+    tokenLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: 600;").arg(GH::HEADER_TEXT));
+    lay->addWidget(tokenLabel);
+
+    m_tokenInput = new QLineEdit();
+    m_tokenInput->setPlaceholderText("ghp_xxxxxxxxxxxx");
+    m_tokenInput->setEchoMode(QLineEdit::Password);
+    m_tokenInput->setStyleSheet(signInInput);
+    lay->addWidget(m_tokenInput);
+
+    auto *cookieRow = new QHBoxLayout();
+    auto *cookieLabel = new QLabel("Cookie (optional)");
+    cookieLabel->setStyleSheet(QString("color: %1; font-size: 13px;").arg(GH::TEXT_SECONDARY));
+    cookieRow->addWidget(cookieLabel);
+    cookieRow->addStretch();
+
+    m_cookieInput = new QLineEdit();
+    m_cookieInput->setPlaceholderText("Optional");
+    m_cookieInput->setStyleSheet(signInInput);
+    lay->addWidget(m_cookieInput);
+
+    auto *importBtn = new QPushButton("Import from browser");
+    importBtn->setStyleSheet("QPushButton { color: #58a6ff; background: transparent; "
+                             "border: none; font-size: 12px; } QPushButton:hover { text-decoration: underline; }");
+    connect(importBtn, &QPushButton::clicked, this, &SignInPage::importFromBrowser);
+    lay->addWidget(importBtn, 0, Qt::AlignRight);
+
+    auto *signInBtn = new QPushButton("Sign in");
+    signInBtn->setStyleSheet(greenBtn);
+    signInBtn->setFixedHeight(40);
+    connect(signInBtn, &QPushButton::clicked, this, &SignInPage::signInRequested);
+    lay->addWidget(signInBtn);
+
+    m_statusLabel = new QLabel();
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setStyleSheet("font-size: 13px;");
+    lay->addWidget(m_statusLabel);
+
+    auto *tip = new QLabel("Generate token at:\ngithub.com/settings/tokens");
+    tip->setAlignment(Qt::AlignCenter);
+    tip->setStyleSheet(QString("color: %1; font-size: 12px;").arg(GH::TEXT_SECONDARY));
+    tip->setWordWrap(true);
+    lay->addWidget(tip);
+
+    wrap->addWidget(box);
+
+    auto *backRow = new QHBoxLayout();
+    backRow->setAlignment(Qt::AlignCenter);
+    auto *backBtn = new QPushButton("← Back to home");
+    backBtn->setFlat(true);
+    backBtn->setCursor(Qt::PointingHandCursor);
+    backBtn->setStyleSheet(QString("color: %1; font-size: 13px;").arg(GH::LINK));
+    connect(backBtn, &QPushButton::clicked, this, &SignInPage::backRequested);
+    backRow->addWidget(backBtn);
+    wrap->addLayout(backRow);
 }
 
-void AvatarLabel::onImageLoaded(QNetworkReply *reply)
+void SignInPage::importFromBrowser()
 {
-    if (reply->error() == QNetworkReply::NoError) {
-        QPixmap pixmap;
-        if (pixmap.loadFromData(reply->readAll())) {
-            setPixmap(pixmap.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        }
+    BrowserCookieDialog dlg(this);
+    if (dlg.exec() == QDialog::Accepted && !dlg.selectedCookies().isEmpty()) {
+        m_cookieInput->setText(BrowserCookieExtractor::formatCookieString(dlg.selectedCookies()));
     }
-    reply->deleteLater();
+}
+
+QString SignInPage::getToken() const { return m_tokenInput->text().trimmed(); }
+QString SignInPage::getCookie() const { return m_cookieInput->text().trimmed(); }
+QString SignInPage::getLanguage() const {     return "zh"; }
+
+void SignInPage::setStatus(const QString &msg, bool error)
+{
+    m_statusLabel->setText(msg);
+    m_statusLabel->setStyleSheet(QString("color: %1; font-size: 13px;").arg(error ? GH::DANGER : GH::TEXT_SECONDARY));
 }
 
 // ─── BrowserCookieDialog ────────────────────────────────────────────────────
 
-BrowserCookieDialog::BrowserCookieDialog(QWidget *parent)
-    : QDialog(parent)
+BrowserCookieDialog::BrowserCookieDialog(QWidget *parent) : QDialog(parent)
 {
-    setupUi();
-}
+    setWindowTitle("Import Cookies");
+    setMinimumSize(400, 280);
+    setStyleSheet("background: #161b22;");
 
-void BrowserCookieDialog::setupUi()
-{
-    setWindowTitle("从浏览器导入 Cookie");
-    setMinimumSize(450, 300);
+    auto *lay = new QVBoxLayout(this);
+    auto *t = new QLabel("Select a browser to import GitHub cookies");
+    t->setStyleSheet("color: #e6edf3; font-size: 14px;");
+    t->setAlignment(Qt::AlignCenter);
+    lay->addWidget(t);
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setSpacing(15);
-    layout->setContentsMargins(30, 30, 30, 30);
-
-    auto *title = new QLabel("从浏览器导入 GitHub Cookie");
-    title->setFont(QFont("Arial", 16, QFont::Bold));
-    title->setAlignment(Qt::AlignCenter);
-    layout->addWidget(title);
-
-    auto *desc = new QLabel("选择一个浏览器以自动提取 GitHub Cookie\n无需手动输入 Token 或 Cookie");
-    desc->setAlignment(Qt::AlignCenter);
-    desc->setStyleSheet("color: #57606a; margin-bottom: 10px;");
-    layout->addWidget(desc);
-
-    auto *btnLayout = new QVBoxLayout();
-    btnLayout->setSpacing(10);
-
-    struct BrowserInfo { QString id; QString name; QString icon; };
-    QVector<BrowserInfo> browsers = {
-        {"chrome", "Google Chrome", "[C]"},
-        {"edge", "Microsoft Edge", "[E]"},
-        {"firefox", "Mozilla Firefox", "[F]"}
-    };
-
-    for (const auto &b : browsers) {
-        auto *btn = new QPushButton(b.icon + " " + b.name);
-        btn->setStyleSheet(R"(
-            QPushButton {
-                padding: 12px 20px;
-                border: 1px solid #d0d7de;
-                border-radius: 6px;
-                background-color: #f6f8fa;
-                font-size: 14px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #e5e7eb;
-                border-color: #0969da;
-            }
-        )");
-        connect(btn, &QPushButton::clicked, this, [this, name = b.id]() {
-            onBrowserSelected(name);
-        });
-        btnLayout->addWidget(btn);
-    }
-    layout->addLayout(btnLayout);
-
-    auto *cancelBtn = new QPushButton("取消");
-    cancelBtn->setStyleSheet(R"(
-        QPushButton {
-            padding: 10px;
-            border: 1px solid #d0d7de;
-            border-radius: 6px;
-            background-color: white;
-        }
-        QPushButton:hover {
-            background-color: #f6f8fa;
-        }
-    )");
-    connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    layout->addWidget(cancelBtn);
-
-    m_statusLabel = new QLabel("");
+    m_statusLabel = new QLabel();
     m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setStyleSheet("color: #cf222e;");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
+    m_statusLabel->setStyleSheet("color: #8b949e;");
+    lay->addWidget(m_statusLabel);
+
+    for (const auto &b : {"Chrome", "Edge", "Firefox"}) {
+        auto *btn = new QPushButton(b);
+        btn->setStyleSheet("QPushButton { color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; "
+                           "padding: 10px; font-size: 14px; } QPushButton:hover { border-color: #58a6ff; }");
+        connect(btn, &QPushButton::clicked, this, [this, b = QString(b).toLower()]() { onBrowserSelected(b); });
+        lay->addWidget(btn);
+    }
+
+    auto *cancel = new QPushButton("Cancel");
+    cancel->setStyleSheet("QPushButton { color: #8b949e; border: 1px solid #30363d; border-radius: 6px; "
+                          "padding: 8px; } QPushButton:hover { color: #e6edf3; }");
+    connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+    lay->addWidget(cancel);
 }
 
 void BrowserCookieDialog::onBrowserSelected(const QString &browser)
 {
-    m_statusLabel->setText("正在从 " + browser + " 提取 Cookie...");
-    m_statusLabel->setStyleSheet("color: #0969da;");
+    m_statusLabel->setText("Extracting from " + browser + "...");
+    m_statusLabel->setStyleSheet("color: #58a6ff;");
 
     BrowserCookieExtractor extractor;
     QMap<QString, QString> cookies;
-
-    if (browser == "chrome")
-        cookies = extractor.getGithubCookieFromChrome();
-    else if (browser == "edge")
-        cookies = extractor.getGithubCookieFromEdge();
-    else if (browser == "firefox")
-        cookies = extractor.getGithubCookieFromFirefox();
+    if (browser == "chrome") cookies = extractor.getGithubCookieFromChrome();
+    else if (browser == "edge") cookies = extractor.getGithubCookieFromEdge();
+    else if (browser == "firefox") cookies = extractor.getGithubCookieFromFirefox();
 
     if (!cookies.isEmpty()) {
         m_selectedCookies = cookies;
-        m_statusLabel->setText("成功从 " + browser + " 提取 Cookie!");
-        m_statusLabel->setStyleSheet("color: #1a7f37;");
-        QTimer::singleShot(800, this, &QDialog::accept);
+        m_statusLabel->setText("Successfully imported from " + browser);
+        m_statusLabel->setStyleSheet("color: #3fb950;");
+        QTimer::singleShot(600, this, &QDialog::accept);
     } else {
-        m_statusLabel->setText("未从 " + browser + " 中找到 GitHub Cookie");
-        m_statusLabel->setStyleSheet("color: #cf222e;");
+        m_statusLabel->setText("No GitHub cookies found in " + browser);
+        m_statusLabel->setStyleSheet("color: #f85149;");
     }
 }
-
-// ─── LoginDialog ────────────────────────────────────────────────────────────
-
-LoginDialog::LoginDialog(QWidget *parent)
-    : QDialog(parent)
-{
-    setupUi();
-}
-
-void LoginDialog::setupUi()
-{
-    setWindowTitle(getText("app_title"));
-    setMinimumSize(450, 350);
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setSpacing(15);
-    layout->setContentsMargins(30, 30, 30, 30);
-
-    auto *title = new QLabel("GitHub Client");
-    title->setFont(QFont("Arial", 18, QFont::Bold));
-    title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("color: #24292f; margin-bottom: 10px;");
-    layout->addWidget(title);
-
-    auto *tokenLabel = new QLabel(getText("token_label"));
-    tokenLabel->setStyleSheet("color: #24292f; font-weight: bold;");
-    layout->addWidget(tokenLabel);
-
-    m_tokenInput = new QLineEdit();
-    m_tokenInput->setPlaceholderText("ghp_xxxxxxxxxxxx");
-    m_tokenInput->setStyleSheet(inputStyle);
-    layout->addWidget(m_tokenInput);
-
-    auto *cookieLayout = new QHBoxLayout();
-    auto *cookieLabel = new QLabel(getText("cookie_label"));
-    cookieLabel->setStyleSheet("color: #24292f;");
-    cookieLayout->addWidget(cookieLabel);
-    cookieLayout->addStretch();
-
-    m_cookieInput = new QLineEdit();
-    m_cookieInput->setPlaceholderText("可选，从浏览器导入");
-    m_cookieInput->setStyleSheet(inputStyle);
-    cookieLayout->addWidget(m_cookieInput);
-
-    auto *importBtn = new QPushButton("[Web] 从浏览器导入");
-    importBtn->setStyleSheet(blueBtnStyle);
-    connect(importBtn, &QPushButton::clicked, this, &LoginDialog::importFromBrowser);
-    cookieLayout->addWidget(importBtn);
-    layout->addLayout(cookieLayout);
-
-    auto *langLayout = new QHBoxLayout();
-    auto *langLabel = new QLabel(getText("language_label"));
-    m_langCombo = new QComboBox();
-    m_langCombo->addItems({"中文", "English"});
-    m_langCombo->setCurrentIndex(0);
-    langLayout->addWidget(langLabel);
-    langLayout->addWidget(m_langCombo);
-    layout->addLayout(langLayout);
-
-    auto *tipLabel = new QLabel("提示：可通过 Token 页面生成 https://github.com/settings/tokens");
-    tipLabel->setStyleSheet("color: #57606a; font-size: 12px;");
-    tipLabel->setWordWrap(true);
-    layout->addWidget(tipLabel);
-
-    auto *loginBtn = new QPushButton(getText("login_button"));
-    loginBtn->setStyleSheet(primaryBtnStyle);
-    connect(loginBtn, &QPushButton::clicked, this, &QDialog::accept);
-    layout->addWidget(loginBtn);
-
-    m_statusLabel = new QLabel("");
-    m_statusLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(m_statusLabel);
-}
-
-void LoginDialog::importFromBrowser()
-{
-    BrowserCookieDialog dialog(this);
-    if (dialog.exec() == QDialog::Accepted && !dialog.selectedCookies().isEmpty()) {
-        QString cookieStr = BrowserCookieExtractor::formatCookieString(dialog.selectedCookies());
-        m_cookieInput->setText(cookieStr);
-        m_statusLabel->setText("Cookie 已成功导入");
-        m_statusLabel->setStyleSheet("color: #1a7f37;");
-    }
-}
-
-QString LoginDialog::getToken() const { return m_tokenInput->text().trimmed(); }
-QString LoginDialog::getCookie() const { return m_cookieInput->text().trimmed(); }
-QString LoginDialog::getLanguage() const { return m_langCombo->currentIndex() == 0 ? "zh" : "en"; }
 
 // ─── RepoCard ───────────────────────────────────────────────────────────────
 
-RepoCard::RepoCard(const QJsonObject &repoData, std::function<void(const QJsonObject &)> onClick)
-    : QFrame()
-    , m_repoData(repoData)
-    , m_onClick(std::move(onClick))
-{
-    setupUi();
-}
+RepoCard::RepoCard(const QJsonObject &repoData, QWidget *parent)
+    : ClickableFrame(parent), m_repoData(repoData) { setupUi(); }
 
 void RepoCard::setupUi()
 {
     setStyleSheet(cardStyle);
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(18, 18, 18, 18);
+    lay->setSpacing(8);
 
-    auto *layout = new QVBoxLayout(this);
-    layout->setSpacing(8);
-    layout->setContentsMargins(16, 16, 16, 16);
-
-    auto *nameLabel = new QLabel(m_repoData["full_name"].toString("Unknown"));
-    nameLabel->setFont(QFont("Arial", 16, QFont::Bold));
-    nameLabel->setStyleSheet("color: #0969da;");
-    nameLabel->setCursor(Qt::PointingHandCursor);
-    layout->addWidget(nameLabel);
+    auto *name = new QLabel(m_repoData["full_name"].toString("Unknown"));
+    name->setFont(QFont("Arial", 15, QFont::Bold));
+    name->setStyleSheet(QString("color: %1;").arg(GH::LINK));
+    lay->addWidget(name);
 
     QString desc = m_repoData["description"].toString();
-    if (desc.isEmpty()) desc = getText("no_description");
-    auto *descLabel = new QLabel(desc);
-    descLabel->setStyleSheet("color: #57606a;");
-    descLabel->setWordWrap(true);
-    layout->addWidget(descLabel);
+    if (desc.isEmpty()) desc = "No description";
+    auto *d = new QLabel(desc);
+    d->setWordWrap(true);
+    d->setStyleSheet(QString("color: %1; font-size: 13px;").arg(GH::TEXT_SECONDARY));
+    lay->addWidget(d);
 
-    auto *statsLayout = new QHBoxLayout();
-    statsLayout->setSpacing(15);
-
-    auto addStat = [&](const QString &label, int value) {
-        auto *lbl = new QLabel(label + ": " + QString::number(value));
-        lbl->setStyleSheet("color: #57606a;");
-        statsLayout->addWidget(lbl);
+    auto *stats = new QHBoxLayout();
+    stats->setSpacing(16);
+    auto add = [&](const QString &prefix, int v) {
+        auto *l = new QLabel(QString("%1: %2").arg(prefix).arg(v));
+        l->setStyleSheet(QString("color: %1; font-size: 12px;").arg(GH::TEXT_SECONDARY));
+        stats->addWidget(l);
     };
+    add("Stars", m_repoData["stargazers_count"].toInt());
+    add("Forks", m_repoData["forks_count"].toInt());
+    add("Issues", m_repoData["open_issues_count"].toInt());
+    stats->addStretch();
+    lay->addLayout(stats);
 
-    addStat("Stars", m_repoData["stargazers_count"].toInt());
-    addStat("Forks", m_repoData["forks_count"].toInt());
-    addStat("Issues", m_repoData["open_issues_count"].toInt());
-
-    statsLayout->addStretch();
-    layout->addLayout(statsLayout);
-
-    QString updated = m_repoData["updated_at"].toString().left(10);
-    if (!updated.isEmpty()) {
-        auto *timeLabel = new QLabel("更新于：" + updated);
-        timeLabel->setStyleSheet("color: #57606a; font-size: 12px;");
-        layout->addWidget(timeLabel);
-    }
-
-    // Make the entire card clickable via the name label
-    connect(nameLabel, &QLabel::linkActivated, this, [this]() {});
-    // Use mouse press event on the card itself
-    setMouseTracking(true);
-    nameLabel->installEventFilter(this);
+    connect(this, &ClickableFrame::clicked, this, [this]() { emit clicked(m_repoData); });
 }
 
 // ─── RepoFilesView ──────────────────────────────────────────────────────────
 
 RepoFilesView::RepoFilesView(GitHubAPI *api, const QString &owner, const QString &repo, QWidget *parent)
-    : QWidget(parent)
-    , m_api(api)
-    , m_owner(owner)
-    , m_repo(repo)
-    , m_currentPath("")
-    , m_branch("main")
-{
-    setupUi();
-    loadFiles();
-}
+    : QWidget(parent), m_api(api), m_owner(owner), m_repo(repo), m_branch("main") { setupUi(); loadFiles(); }
 
 void RepoFilesView::setupUi()
 {
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(10, 10, 10, 10);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 10, 0, 0);
 
-    auto *header = new QHBoxLayout();
+    auto *hdr = new QHBoxLayout();
     m_pathLabel = new QLabel("/");
-    m_pathLabel->setFont(QFont("Arial", 12, QFont::Bold));
-    header->addWidget(m_pathLabel);
-    header->addStretch();
-
-    auto *branchLabel = new QLabel("分支：" + m_branch);
-    branchLabel->setStyleSheet("color: #57606a;");
-    header->addWidget(branchLabel);
-    layout->addLayout(header);
+    m_pathLabel->setFont(QFont("Arial", 13, QFont::Bold));
+    m_pathLabel->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    hdr->addWidget(m_pathLabel);
+    hdr->addStretch();
+    lay->addLayout(hdr);
 
     m_fileTree = new QTreeWidget();
     m_fileTree->setColumnCount(3);
-    m_fileTree->setHeaderLabels({"文件名", "大小", "更新时间"});
-    m_fileTree->setColumnWidth(0, 300);
-    m_fileTree->setColumnWidth(1, 100);
-    m_fileTree->setColumnWidth(2, 150);
-    m_fileTree->setStyleSheet(treeStyle);
-
+    m_fileTree->setHeaderLabels({"Name", "Size", "Updated"});
+    m_fileTree->setColumnWidth(0, 350);
+    m_fileTree->setColumnWidth(1, 90);
+    m_fileTree->setStyleSheet(treeDark);
     connect(m_fileTree, &QTreeWidget::itemDoubleClicked, this, &RepoFilesView::onItemDoubleClicked);
-    layout->addWidget(m_fileTree);
+    lay->addWidget(m_fileTree);
+
+    m_loading = new LoadingLabel("Loading files...", this);
+    lay->addWidget(m_loading);
+    m_loading->hide();
 }
 
 void RepoFilesView::loadFiles()
 {
-    m_fileTree->clear();
-
+    m_fileTree->hide();
+    m_loading->show();
     m_api->getRepositoryContents(m_owner, m_repo, m_currentPath, m_branch,
-        [this](const QJsonArray &contents) { onFilesLoaded(contents); },
-        [this](const QString &error) { onError(error); }
-    );
+        [this](const QJsonArray &c) { onFilesLoaded(c); },
+        [this](const QString &e) { onError(e); });
 }
 
 void RepoFilesView::onFilesLoaded(const QJsonArray &contents)
 {
+    m_loading->hide();
+    m_fileTree->show();
     m_fileTree->clear();
-    for (const QJsonValue &val : contents) {
-        QJsonObject item = val.toObject();
-        auto *treeItem = new QTreeWidgetItem();
-
-        QString icon = item["type"].toString() == "dir" ? "[D]" : "[F]";
-        treeItem->setText(0, icon + " " + item["name"].toString());
-        treeItem->setText(1, formatSize(item["size"].toInt()));
-
-        QString url = item["html_url"].toString();
-        treeItem->setText(2, url.section('/', -1));
-
-        treeItem->setData(0, Qt::UserRole, QJsonDocument(item).toJson(QJsonDocument::Compact));
-        m_fileTree->addTopLevelItem(treeItem);
+    for (const auto &v : contents) {
+        auto obj = v.toObject();
+        auto *it = new QTreeWidgetItem();
+        bool isDir = obj["type"].toString() == "dir";
+        it->setText(0, QString(isDir ? "[D] " : "[F] ") + obj["name"].toString());
+        it->setText(1, formatSize(obj["size"].toInt()));
+        it->setText(2, obj["html_url"].toString().section('/', -1));
+        it->setData(0, Qt::UserRole, QJsonDocument(obj).toJson(QJsonDocument::Compact));
+        if (isDir) it->setForeground(0, QColor("#58a6ff"));
+        m_fileTree->addTopLevelItem(it);
     }
 }
 
-void RepoFilesView::onItemDoubleClicked(QTreeWidgetItem *item, int column)
+void RepoFilesView::onItemDoubleClicked(QTreeWidgetItem *item, int)
 {
-    Q_UNUSED(column);
-    QByteArray data = item->data(0, Qt::UserRole).toByteArray();
-    QJsonObject obj = QJsonDocument::fromJson(data).object();
-
-    if (obj["type"].toString() == "file") {
-        showFileContent(obj);
-    } else if (obj["type"].toString() == "dir") {
+    QJsonObject obj = QJsonDocument::fromJson(item->data(0, Qt::UserRole).toByteArray()).object();
+    if (obj["type"].toString() == "dir") {
         m_currentPath = obj["path"].toString();
         m_pathLabel->setText("/" + m_currentPath);
         loadFiles();
+    } else {
+        showFileContent(obj);
     }
 }
 
-void RepoFilesView::showFileContent(const QJsonObject &fileData)
+void RepoFilesView::showFileContent(const QJsonObject &fd)
 {
-    QString path = fileData["path"].toString();
-    QString filename = fileData["name"].toString();
+    auto *dlg = new QDialog(this);
+    dlg->setWindowTitle(fd["name"].toString());
+    dlg->setMinimumSize(800, 600);
+    dlg->setStyleSheet("background: #0d1117;");
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    auto *lay = new QVBoxLayout(dlg);
+    auto *te = new QTextEdit();
+    te->setReadOnly(true);
+    te->setFont(QFont("Consolas", 11));
+    te->setStyleSheet("background: #0d1117; color: #e6edf3; border: none;");
+    te->setPlainText("Loading...");
 
-    m_api->getFileContent(m_owner, m_repo, path, m_branch,
-        [this, filename](const QJsonObject &data) {
-            auto *dialog = new QDialog(this);
-            dialog->setWindowTitle(filename);
-            dialog->setMinimumSize(800, 600);
-            dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto *closeBtn = new QPushButton("Close");
+    closeBtn->setStyleSheet(outlineBtn);
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::close);
 
-            auto *layout = new QVBoxLayout(dialog);
-            auto *content = new QTextEdit();
-            content->setReadOnly(true);
-            content->setFont(QFont("Consolas", 10));
+    lay->addWidget(te);
+    lay->addWidget(closeBtn);
+    dlg->exec();
 
-            QString decoded = data["decoded_content"].toString();
-            if (decoded.isEmpty()) {
-                QByteArray b64 = data["content"].toString().toUtf8();
-                decoded = QString::fromUtf8(QByteArray::fromBase64(b64));
-            }
-            content->setPlainText(decoded);
-            layout->addWidget(content);
-
-            auto *closeBtn = new QPushButton("关闭");
-            closeBtn->setStyleSheet(secondaryBtnStyle);
-            connect(closeBtn, &QPushButton::clicked, dialog, &QDialog::close);
-            layout->addWidget(closeBtn);
-
-            dialog->exec();
+    m_api->getFileContent(m_owner, m_repo, fd["path"].toString(), m_branch,
+        [te](const QJsonObject &data) {
+            QByteArray b64 = data["content"].toString().toUtf8();
+            te->setPlainText(QString::fromUtf8(QByteArray::fromBase64(b64)));
         },
-        [this](const QString &error) { onError(error); }
+        [te](const QString &e) { te->setPlainText("Error: " + e); }
     );
 }
 
-void RepoFilesView::onError(const QString &error)
-{
-    QMessageBox::critical(this, "错误", "加载失败：" + error);
-}
-
-QString RepoFilesView::formatSize(int size)
-{
-    if (size <= 0) return "-";
-    if (size < 1024) return QString::number(size) + " B";
-    if (size < 1024 * 1024) return QString::number(size / 1024.0, 'f', 1) + " KB";
-    return QString::number(size / (1024.0 * 1048576.0), 'f', 1) + " MB";
+void RepoFilesView::onError(const QString &e) { m_loading->hide(); m_fileTree->hide(); }
+QString RepoFilesView::formatSize(int s) {
+    if (s <= 0) return "-";
+    if (s < 1024) return QString::number(s) + " B";
+    if (s < 1048576) return QString::number(s / 1024.0, 'f', 1) + " KB";
+    return QString::number(s / 1048576.0, 'f', 1) + " MB";
 }
 
 // ─── RepoIssuesView ─────────────────────────────────────────────────────────
 
 RepoIssuesView::RepoIssuesView(GitHubAPI *api, const QString &owner, const QString &repo, QWidget *parent)
-    : QTableWidget(parent)
-    , m_api(api)
-    , m_owner(owner)
-    , m_repo(repo)
-{
-    setupUi();
-    loadIssues();
-}
+    : QWidget(parent), m_api(api), m_owner(owner), m_repo(repo) { setupUi(); loadIssues(); }
 
 void RepoIssuesView::setupUi()
 {
-    setColumnCount(4);
-    setHorizontalHeaderLabels({"标题", "作者", "状态", "更新时间"});
-    setStyleSheet(tableStyle);
-    horizontalHeader()->setStretchLastSection(true);
-    verticalHeader()->setVisible(false);
-    setAlternatingRowColors(true);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 10, 0, 0);
+
+    m_stack = new QStackedWidget();
+    m_loading = new LoadingLabel("Loading issues...");
+    m_table = new QTableWidget();
+    m_table->setColumnCount(4);
+    m_table->setHorizontalHeaderLabels({"Title", "Author", "State", "Updated"});
+    m_table->setStyleSheet(tableDark);
+    m_table->horizontalHeader()->setStretchLastSection(true);
+    m_table->verticalHeader()->setVisible(false);
+    m_table->setAlternatingRowColors(true);
+
+    m_stack->addWidget(m_loading);
+    m_stack->addWidget(m_table);
+    lay->addWidget(m_stack);
 }
 
 void RepoIssuesView::loadIssues()
 {
+    m_stack->setCurrentIndex(0);
     m_api->getIssues(m_owner, m_repo, "open",
-        [this](const QJsonArray &issues) { onIssuesLoaded(issues); },
-        [this](const QString &error) { onError(error); }
-    );
+        [this](const QJsonArray &i) { onIssuesLoaded(i); },
+        [this](const QString &e) { onError(e); });
 }
 
 void RepoIssuesView::onIssuesLoaded(const QJsonArray &issues)
 {
-    setRowCount(issues.size());
-    for (int row = 0; row < issues.size(); ++row) {
-        QJsonObject issue = issues[row].toObject();
-
-        auto *titleItem = new QTableWidgetItem(issue["title"].toString());
-        titleItem->setFlags(titleItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 0, titleItem);
-
-        QString author = issue["user"].toObject()["login"].toString();
-        auto *authorItem = new QTableWidgetItem(author);
-        authorItem->setFlags(authorItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 1, authorItem);
-
-        bool isOpen = issue["state"].toString() == "open";
-        auto *stateItem = new QTableWidgetItem(isOpen ? "Open" : "Closed");
-        stateItem->setFlags(stateItem->flags() & ~Qt::ItemIsEditable);
-        stateItem->setForeground(isOpen ? QColor("#1a7f37") : QColor("#cf222e"));
-        setItem(row, 2, stateItem);
-
-        QString updated = issue["updated_at"].toString().left(10);
-        auto *dateItem = new QTableWidgetItem(updated);
-        dateItem->setFlags(dateItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 3, dateItem);
+    m_table->setRowCount(issues.size());
+    for (int r = 0; r < issues.size(); ++r) {
+        auto obj = issues[r].toObject();
+        auto add = [&](int c, const QString &t, const QString &color = "") {
+            auto *it = new QTableWidgetItem(t);
+            it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+            if (!color.isEmpty()) it->setForeground(QColor(color));
+            m_table->setItem(r, c, it);
+        };
+        add(0, obj["title"].toString());
+        add(1, obj["user"].toObject()["login"].toString());
+        bool open = obj["state"].toString() == "open";
+        add(2, open ? "Open" : "Closed", open ? GH::SUCCESS : GH::DANGER);
+        add(3, obj["updated_at"].toString().left(10));
     }
+    m_stack->setCurrentIndex(1);
 }
 
-void RepoIssuesView::onError(const QString &error)
-{
-    setRowCount(1);
-    auto *errItem = new QTableWidgetItem("加载失败：" + error);
-    errItem->setForeground(QColor("#cf222e"));
-    setItem(0, 0, errItem);
-}
+void RepoIssuesView::onError(const QString &) { m_loading->setLoadingText("Failed to load issues"); }
 
 // ─── RepoPRsView ────────────────────────────────────────────────────────────
 
 RepoPRsView::RepoPRsView(GitHubAPI *api, const QString &owner, const QString &repo, QWidget *parent)
-    : QTableWidget(parent)
-    , m_api(api)
-    , m_owner(owner)
-    , m_repo(repo)
-{
-    setupUi();
-    loadPRs();
-}
+    : QWidget(parent), m_api(api), m_owner(owner), m_repo(repo) { setupUi(); loadPRs(); }
 
 void RepoPRsView::setupUi()
 {
-    setColumnCount(4);
-    setHorizontalHeaderLabels({"标题", "作者", "状态", "更新时间"});
-    setStyleSheet(tableStyle);
-    horizontalHeader()->setStretchLastSection(true);
-    verticalHeader()->setVisible(false);
-    setAlternatingRowColors(true);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 10, 0, 0);
+
+    m_stack = new QStackedWidget();
+    m_loading = new LoadingLabel("Loading pull requests...");
+    m_table = new QTableWidget();
+    m_table->setColumnCount(4);
+    m_table->setHorizontalHeaderLabels({"Title", "Author", "State", "Updated"});
+    m_table->setStyleSheet(tableDark);
+    m_table->horizontalHeader()->setStretchLastSection(true);
+    m_table->verticalHeader()->setVisible(false);
+    m_table->setAlternatingRowColors(true);
+
+    m_stack->addWidget(m_loading);
+    m_stack->addWidget(m_table);
+    lay->addWidget(m_stack);
 }
 
 void RepoPRsView::loadPRs()
 {
+    m_stack->setCurrentIndex(0);
     m_api->getPullRequests(m_owner, m_repo, "open",
-        [this](const QJsonArray &prs) { onPRsLoaded(prs); },
-        [this](const QString &error) { onError(error); }
-    );
+        [this](const QJsonArray &p) { onPRsLoaded(p); },
+        [this](const QString &e) { onError(e); });
 }
 
 void RepoPRsView::onPRsLoaded(const QJsonArray &prs)
 {
-    setRowCount(prs.size());
-    for (int row = 0; row < prs.size(); ++row) {
-        QJsonObject pr = prs[row].toObject();
+    m_table->setRowCount(prs.size());
+    for (int r = 0; r < prs.size(); ++r) {
+        auto obj = prs[r].toObject();
+        auto add = [&](int c, const QString &t, const QString &color = "") {
+            auto *it = new QTableWidgetItem(t);
+            it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+            if (!color.isEmpty()) it->setForeground(QColor(color));
+            m_table->setItem(r, c, it);
+        };
+        add(0, obj["title"].toString());
+        add(1, obj["user"].toObject()["login"].toString());
 
-        auto *titleItem = new QTableWidgetItem(pr["title"].toString());
-        titleItem->setFlags(titleItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 0, titleItem);
-
-        QString author = pr["user"].toObject()["login"].toString();
-        auto *authorItem = new QTableWidgetItem(author);
-        authorItem->setFlags(authorItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 1, authorItem);
-
-        QString state;
-        QString color;
-        if (!pr["merged_at"].toString().isEmpty()) {
-            state = "Merged";
-            color = "#8250df";
-        } else if (pr["draft"].toBool()) {
-            state = "Draft";
-            color = "#57606a";
-        } else {
-            state = "Open";
-            color = "#1a7f37";
-        }
-
-        auto *stateItem = new QTableWidgetItem(state);
-        stateItem->setFlags(stateItem->flags() & ~Qt::ItemIsEditable);
-        stateItem->setForeground(QColor(color));
-        setItem(row, 2, stateItem);
-
-        QString updated = pr["updated_at"].toString().left(10);
-        auto *dateItem = new QTableWidgetItem(updated);
-        dateItem->setFlags(dateItem->flags() & ~Qt::ItemIsEditable);
-        setItem(row, 3, dateItem);
+        QString state, color;
+        if (!obj["merged_at"].toString().isEmpty()) { state = "Merged"; color = GH::PURPLE; }
+        else if (obj["draft"].toBool()) { state = "Draft"; color = GH::TEXT_SECONDARY; }
+        else { state = "Open"; color = GH::SUCCESS; }
+        add(2, state, color);
+        add(3, obj["updated_at"].toString().left(10));
     }
+    m_stack->setCurrentIndex(1);
 }
 
-void RepoPRsView::onError(const QString &error)
-{
-    setRowCount(1);
-    auto *errItem = new QTableWidgetItem("加载失败：" + error);
-    errItem->setForeground(QColor("#cf222e"));
-    setItem(0, 0, errItem);
-}
+void RepoPRsView::onError(const QString &) { m_loading->setLoadingText("Failed to load PRs"); }
 
 // ─── RepositoryDetailView ───────────────────────────────────────────────────
 
-RepositoryDetailView::RepositoryDetailView(GitHubAPI *api, const QJsonObject &repoData,
-                                             std::function<void()> onBack, QWidget *parent)
-    : QWidget(parent)
-    , m_api(api)
-    , m_repoData(repoData)
-    , m_onBack(std::move(onBack))
-{
-    setupUi();
-}
+RepositoryDetailView::RepositoryDetailView(GitHubAPI *api, const QJsonObject &repoData, QWidget *parent)
+    : QWidget(parent), m_api(api), m_repoData(repoData) { setupUi(); }
 
 void RepositoryDetailView::setupUi()
 {
-    auto *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(20, 20, 20, 20);
-    mainLayout->setSpacing(15);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *main = new QVBoxLayout(this);
+    main->setContentsMargins(24, 16, 24, 16);
 
-    auto *header = new QHBoxLayout();
-
-    auto *backBtn = new QPushButton("< 返回");
-    backBtn->setStyleSheet(secondaryBtnStyle);
-    connect(backBtn, &QPushButton::clicked, this, &RepositoryDetailView::goBack);
-    header->addWidget(backBtn);
+    auto *hdr = new QHBoxLayout();
+    auto *back = new QPushButton("← Back");
+    back->setStyleSheet(outlineBtn);
+    connect(back, &QPushButton::clicked, this, &RepositoryDetailView::backRequested);
+    hdr->addWidget(back);
 
     QString owner = m_repoData["owner"].toObject()["login"].toString();
     QString name = m_repoData["name"].toString();
     auto *title = new QLabel(owner + "/" + name);
-    title->setFont(QFont("Arial", 24, QFont::Bold));
-    header->addWidget(title);
-    header->addStretch();
+    title->setFont(QFont("Arial", 22, QFont::Bold));
+    title->setStyleSheet(QString("color: %1;").arg(GH::LINK));
+    hdr->addWidget(title);
+    hdr->addStretch();
 
-    auto *openBrowserBtn = new QPushButton("在浏览器中打开");
-    openBrowserBtn->setStyleSheet(greenBtnStyle);
-    connect(openBrowserBtn, &QPushButton::clicked, this, [this]() {
+    auto *open = new QPushButton("Open in browser");
+    open->setStyleSheet(blueBtn);
+    connect(open, &QPushButton::clicked, this, [this]() {
         QDesktopServices::openUrl(QUrl(m_repoData["html_url"].toString()));
     });
-    header->addWidget(openBrowserBtn);
-    mainLayout->addLayout(header);
+    hdr->addWidget(open);
+    main->addLayout(hdr);
 
     auto *tabs = new QTabWidget();
-    tabs->addTab(new RepoFilesView(m_api, owner, name), "[F] 文件");
-    tabs->addTab(new RepoIssuesView(m_api, owner, name), "[I] Issues");
-    tabs->addTab(new RepoPRsView(m_api, owner, name), "[P] Pull Requests");
-    mainLayout->addWidget(tabs);
-}
-
-void RepositoryDetailView::goBack()
-{
-    if (m_onBack) m_onBack();
+    tabs->setStyleSheet(QString(R"(
+        QTabWidget::pane { border: none; }
+        QTabBar::tab { color: %1; padding: 8px 18px; border: none; font-size: 14px; }
+        QTabBar::tab:selected { color: %2; border-bottom: 2px solid #f78166; }
+        QTabBar::tab:hover { color: %2; }
+    )").arg(GH::TEXT_SECONDARY, GH::HEADER_TEXT));
+    QString o = m_repoData["owner"].toObject()["login"].toString();
+    QString r = m_repoData["name"].toString();
+    tabs->addTab(new RepoFilesView(m_api, o, r), "[F] Files");
+    tabs->addTab(new RepoIssuesView(m_api, o, r), "[I] Issues");
+    tabs->addTab(new RepoPRsView(m_api, o, r), "[P] Pull Requests");
+    main->addWidget(tabs);
 }
 
 // ─── RepositoriesView ───────────────────────────────────────────────────────
 
 RepositoriesView::RepositoriesView(GitHubAPI *api, QWidget *parent)
-    : QWidget(parent)
-    , m_api(api)
-{
-    setupUi();
-    loadRepositories();
-}
+    : QWidget(parent), m_api(api) { setupUi(); loadRepositories(); }
 
 void RepositoriesView::setupUi()
 {
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 20, 20, 20);
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(24, 16, 24, 16);
 
-    auto *headerLayout = new QHBoxLayout();
-    auto *title = new QLabel(getText("public_repos"));
-    title->setFont(QFont("Arial", 20, QFont::Bold));
-    headerLayout->addWidget(title);
-    headerLayout->addStretch();
+    auto *hdr = new QHBoxLayout();
+    auto *t = new QLabel("Public Repositories");
+    t->setFont(QFont("Arial", 20, QFont::Bold));
+    t->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    hdr->addWidget(t);
+    hdr->addStretch();
 
-    auto *refreshBtn = new QPushButton(getText("refresh_button"));
-    refreshBtn->setStyleSheet(R"(
-        QPushButton {
-            padding: 5px 15px;
-            border: 1px solid #d0d7de;
-            border-radius: 6px;
-            background-color: #f3f4f6;
-        }
-        QPushButton:hover {
-            background-color: #e5e7eb;
-        }
-    )");
-    connect(refreshBtn, &QPushButton::clicked, this, &RepositoriesView::loadRepositories);
-    headerLayout->addWidget(refreshBtn);
-    layout->addLayout(headerLayout);
+    auto *refresh = new QPushButton("Refresh");
+    refresh->setStyleSheet(outlineBtn);
+    connect(refresh, &QPushButton::clicked, this, &RepositoriesView::loadRepositories);
+    hdr->addWidget(refresh);
+    lay->addLayout(hdr);
+
+    m_stack = new QStackedWidget();
+    m_loading = new LoadingLabel("Loading repositories...");
+    auto *cardsW = new QWidget();
+    m_cardsLayout = new QVBoxLayout(cardsW);
+    m_cardsLayout->setSpacing(14);
+    m_cardsLayout->addStretch();
 
     m_scroll = new QScrollArea();
+    m_scroll->setWidget(cardsW);
     m_scroll->setWidgetResizable(true);
     m_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    layout->addWidget(m_scroll);
 
-    auto *cardsWidget = new QWidget();
-    cardsWidget->setStyleSheet("background-color: #ffffff;");
-    m_cardsLayout = new QVBoxLayout(cardsWidget);
-    m_cardsLayout->setSpacing(15);
-    m_cardsLayout->addStretch();
-    m_scroll->setWidget(cardsWidget);
+    m_stack->addWidget(m_loading);
+    m_stack->addWidget(m_scroll);
+    lay->addWidget(m_stack);
 }
 
 void RepositoriesView::loadRepositories()
 {
+    m_stack->setCurrentIndex(0);
+    // Remove old cards (keep stretch)
     while (m_cardsLayout->count() > 1) {
-        QLayoutItem *item = m_cardsLayout->takeAt(0);
+        auto *item = m_cardsLayout->takeAt(0);
         if (item->widget()) item->widget()->deleteLater();
         delete item;
     }
 
-    auto *loading = new QLabel(getText("loading"));
-    loading->setAlignment(Qt::AlignCenter);
-    m_cardsLayout->insertWidget(0, loading);
-
     m_api->getRepositories("", "updated",
-        [this](const QJsonArray &repos) { onReposLoaded(repos); },
-        [this](const QString &error) { onError(error); }
-    );
+        [this](const QJsonArray &r) { onReposLoaded(r); },
+        [this](const QString &e) { onError(e); });
 }
 
 void RepositoriesView::onReposLoaded(const QJsonArray &repos)
 {
     while (m_cardsLayout->count() > 0) {
-        QLayoutItem *item = m_cardsLayout->takeAt(0);
+        auto *item = m_cardsLayout->takeAt(0);
         if (item->widget()) item->widget()->deleteLater();
         delete item;
     }
-
-    for (const QJsonValue &val : repos) {
-        QJsonObject repo = val.toObject();
-        auto *card = new RepoCard(repo, [this](const QJsonObject &r) {
-            emit repoClicked(r);
-        });
+    for (const auto &v : repos) {
+        auto *card = new RepoCard(v.toObject());
+        connect(card, &RepoCard::clicked, this, &RepositoriesView::repoClicked);
         m_cardsLayout->addWidget(card);
     }
-
     m_cardsLayout->addStretch();
+    m_stack->setCurrentIndex(1);
 }
 
-void RepositoriesView::onError(const QString &error)
-{
-    while (m_cardsLayout->count() > 0) {
-        QLayoutItem *item = m_cardsLayout->takeAt(0);
-        if (item->widget()) item->widget()->deleteLater();
-        delete item;
-    }
-
-    auto *errorLabel = new QLabel(getText("error_title") + ": " + error);
-    errorLabel->setStyleSheet("color: #cf222e;");
-    m_cardsLayout->addWidget(errorLabel);
-}
+void RepositoriesView::onError(const QString &e) { m_loading->setLoadingText("Error: " + e); }
 
 // ─── ProfileView ────────────────────────────────────────────────────────────
 
 ProfileView::ProfileView(GitHubAPI *api, const QJsonObject &userData, QWidget *parent)
-    : QWidget(parent)
-    , m_api(api)
-    , m_userData(userData)
-{
-    setupUi();
-}
+    : QWidget(parent), m_api(api), m_userData(userData) { setupUi(); }
 
 void ProfileView::setupUi()
 {
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(30, 30, 30, 30);
-    setStyleSheet("background-color: white;");
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(40, 30, 40, 30);
 
-    auto *infoLayout = new QHBoxLayout();
-    infoLayout->setSpacing(30);
+    auto *top = new QHBoxLayout();
+    top->setSpacing(30);
 
-    auto *avatar = new AvatarLabel();
+    auto *avatar = new QLabel();
     avatar->setFixedSize(200, 200);
-    avatar->setStyleSheet(R"(
-        background-color: #f6f8fa;
-        border: 1px solid #d0d7de;
-        border-radius: 100px;
-    )");
+    avatar->setStyleSheet("background: #161b22; border: 1px solid #30363d; border-radius: 100px;");
     avatar->setAlignment(Qt::AlignCenter);
 
-    QString avatarUrl = m_userData["avatar_url"].toString();
-    if (!avatarUrl.isEmpty()) {
-        avatar->loadImage(avatarUrl);
-    } else {
-        avatar->setText("No Avatar");
-        avatar->setStyleSheet("color: #57606a;");
+    QString aUrl = m_userData["avatar_url"].toString();
+    if (!aUrl.isEmpty()) {
+        auto *nm = new QNetworkAccessManager(this);
+        QNetworkReply *rep = nm->get(QNetworkRequest(QUrl(aUrl)));
+        connect(rep, &QNetworkReply::finished, this, [rep, avatar]() {
+            QPixmap pm;
+            if (pm.loadFromData(rep->readAll()))
+                avatar->setPixmap(pm.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            rep->deleteLater();
+        });
     }
-    infoLayout->addWidget(avatar);
+    top->addWidget(avatar);
 
-    auto *infoWidget = new QWidget();
-    auto *infoInner = new QVBoxLayout(infoWidget);
-    infoInner->setSpacing(10);
+    auto *info = new QWidget();
+    auto *il = new QVBoxLayout(info);
+    QString nm = m_userData["name"].toString();
+    if (nm.isEmpty()) nm = m_userData["login"].toString();
+    auto *nl = new QLabel(nm);
+    nl->setFont(QFont("Arial", 26, QFont::Bold));
+    nl->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    il->addWidget(nl);
 
-    QString displayName = m_userData["name"].toString();
-    if (displayName.isEmpty()) displayName = m_userData["login"].toString("Unknown");
-    auto *nameLabel = new QLabel(displayName);
-    nameLabel->setFont(QFont("Arial", 24, QFont::Bold));
-    infoInner->addWidget(nameLabel);
-
-    QString login = m_userData["login"].toString();
-    if (!login.isEmpty()) {
-        auto *loginLabel = new QLabel("@" + login);
-        loginLabel->setStyleSheet("color: #57606a;");
-        infoInner->addWidget(loginLabel);
-    }
+    auto *ll = new QLabel("@" + m_userData["login"].toString());
+    ll->setStyleSheet(QString("color: %1; font-size: 18px;").arg(GH::TEXT_SECONDARY));
+    il->addWidget(ll);
 
     QString bio = m_userData["bio"].toString();
     if (!bio.isEmpty()) {
-        auto *bioLabel = new QLabel(bio);
-        bioLabel->setWordWrap(true);
-        bioLabel->setStyleSheet("color: #57606a;");
-        infoInner->addWidget(bioLabel);
+        auto *bl = new QLabel(bio);
+        bl->setWordWrap(true);
+        bl->setStyleSheet(QString("color: %1;").arg(GH::TEXT_SECONDARY));
+        il->addWidget(bl);
     }
+    il->addStretch();
+    top->addWidget(info);
+    lay->addLayout(top);
 
-    infoLayout->addWidget(infoWidget);
-    layout->addLayout(infoLayout);
-
-    auto *statsLayout = new QHBoxLayout();
-    statsLayout->setSpacing(20);
-    statsLayout->addWidget(new QLabel(QString::number(m_userData["followers"].toInt()) + " 关注者"));
-    statsLayout->addWidget(new QLabel(QString::number(m_userData["following"].toInt()) + " 正在关注"));
-    statsLayout->addWidget(new QLabel(QString::number(m_userData["public_repos"].toInt()) + " 公开仓库"));
-    statsLayout->addStretch();
-    layout->addLayout(statsLayout);
-
-    auto *extraLayout = new QHBoxLayout();
-    extraLayout->setSpacing(20);
-
-    auto addExtra = [&](const QString &icon, const QString &key) {
-        QString val = m_userData[key].toString();
-        if (!val.isEmpty())
-            extraLayout->addWidget(new QLabel(icon + " " + val));
+    auto *stats = new QHBoxLayout();
+    stats->setSpacing(24);
+    auto addStat = [&](const QString &label, int v) {
+        auto *l = new QLabel(QString("%1 %2").arg(v).arg(label));
+        l->setStyleSheet(QString("color: %1; font-size: 14px;").arg(GH::TEXT_SECONDARY));
+        stats->addWidget(l);
     };
+    addStat("followers", m_userData["followers"].toInt());
+    addStat("following", m_userData["following"].toInt());
+    addStat("repos", m_userData["public_repos"].toInt());
+    stats->addStretch();
+    lay->addLayout(stats);
 
-    addExtra("[C]", "company");
-    addExtra("[L]", "location");
-    addExtra("[E]", "email");
-    addExtra("[W]", "blog");
-    extraLayout->addStretch();
-    layout->addLayout(extraLayout);
+    lay->addStretch();
+}
 
-    QString createdAt = m_userData["created_at"].toString().left(10);
-    if (!createdAt.isEmpty()) {
-        layout->addWidget(new QLabel("成员于 " + createdAt + " 加入"));
+// ─── DashboardPage ──────────────────────────────────────────────────────────
+
+DashboardPage::DashboardPage(GitHubAPI *api, const QJsonObject &user, QWidget *parent)
+    : QWidget(parent), m_api(api), m_user(user) { setupUi(); }
+
+void DashboardPage::setupUi()
+{
+    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+    auto *lay = new QVBoxLayout(this);
+    lay->setContentsMargins(0, 0, 0, 0);
+
+    m_contentStack = new QStackedWidget();
+    m_contentStack->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
+
+    auto *mainWidget = new QWidget();
+    auto *ml = new QVBoxLayout(mainWidget);
+    ml->setContentsMargins(0, 0, 0, 0);
+
+    auto *tabs = new QTabWidget();
+    tabs->setStyleSheet(QString(R"(
+        QTabWidget::pane { border: none; }
+        QTabBar::tab { color: %1; padding: 10px 22px; border: none; font-size: 14px;
+                       border-bottom: 2px solid transparent; }
+        QTabBar::tab:selected { color: %2; border-bottom-color: #f78166; }
+        QTabBar::tab:hover { color: %2; }
+    )").arg(GH::TEXT_SECONDARY, GH::HEADER_TEXT));
+
+    auto *rv = new RepositoriesView(m_api);
+    connect(rv, &RepositoriesView::repoClicked, this, &DashboardPage::repoClicked);
+    tabs->addTab(rv, "[R] Repositories");
+    tabs->addTab(new ProfileView(m_api, m_user), "[P] Profile");
+    ml->addWidget(tabs);
+    m_contentStack->addWidget(mainWidget);
+    m_contentStack->setCurrentIndex(0);
+
+    lay->addWidget(m_contentStack);
+}
+
+void DashboardPage::openRepositoryDetail(const QJsonObject &repo)
+{
+    auto *dv = new RepositoryDetailView(m_api, repo);
+    connect(dv, &RepositoryDetailView::backRequested, this, &DashboardPage::goBack);
+    m_repoStack.append(m_contentStack->currentWidget());
+    m_contentStack->addWidget(dv);
+    m_contentStack->setCurrentIndex(m_contentStack->count() - 1);
+}
+
+void DashboardPage::goBack()
+{
+    if (!m_repoStack.isEmpty()) {
+        auto *cur = m_contentStack->currentWidget();
+        m_contentStack->removeWidget(cur);
+        cur->deleteLater();
+        auto *prev = m_repoStack.takeLast();
+        m_contentStack->setCurrentWidget(prev);
     }
-
-    layout->addStretch();
 }
 
 // ─── MainWindow ─────────────────────────────────────────────────────────────
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , m_api(nullptr)
-{
-    setupUi();
-}
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_api(nullptr) { setupUi(); }
 
 void MainWindow::setupUi()
 {
-    setWindowTitle(getText("app_title"));
+    setWindowTitle("GitHub Client");
     setMinimumSize(1200, 800);
+    setStyleSheet(QString("QMainWindow { background: %1; }").arg(GH::MAIN_BG));
 
-    auto *centralWidget = new QWidget();
-    setCentralWidget(centralWidget);
+    auto *central = new QWidget();
+    setCentralWidget(central);
+    auto *main = new QVBoxLayout(central);
+    main->setContentsMargins(0, 0, 0, 0);
+    main->setSpacing(0);
 
-    auto *mainLayout = new QVBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
+    // Create headers
+    m_headerLoggedOut = createHeaderLoggedOut();
+    m_headerLoggedIn = createHeaderLoggedIn();
+    main->addWidget(m_headerLoggedOut);
+    m_headerLoggedIn->hide();
 
-    setupHeader(mainLayout);
+    // Page stack
+    m_pageStack = new QStackedWidget();
+    m_pageStack->setObjectName("pageStack");
 
-    m_contentStack = new QStackedWidget();
-    m_contentStack->setStyleSheet("background-color: #ffffff;");
-    mainLayout->addWidget(m_contentStack);
+    m_homePage = new HomePage();
+    m_signInPage = new SignInPage();
+
+    m_pageStack->addWidget(m_homePage);     // 0
+    m_pageStack->addWidget(m_signInPage);   // 1
+
+    connect(m_homePage, &HomePage::signInClicked, this, &MainWindow::goToSignIn);
+    connect(m_homePage, &HomePage::signUpClicked, this, &MainWindow::goToSignIn);
+    connect(m_signInPage, &SignInPage::signInRequested, this, &MainWindow::doLogin);
+    connect(m_signInPage, &SignInPage::backRequested, this, &MainWindow::goToHome);
+
+    main->addWidget(m_pageStack);
 }
 
-void MainWindow::setupHeader(QVBoxLayout *layout)
+QWidget* MainWindow::createHeaderLoggedOut()
 {
-    auto *header = new QFrame();
-    header->setStyleSheet(QString(R"(
-        QFrame {
-            background-color: %1;
-            padding: 10px;
-        }
-    )").arg(GitHubColors::HEADER_BG));
+    auto *hdr = new QFrame();
+    hdr->setStyleSheet(QString("background: %1; padding: 10px 24px;").arg(GH::HEADER_BG));
+    auto *lay = new QHBoxLayout(hdr);
+    lay->setContentsMargins(0, 0, 0, 0);
 
-    auto *headerLayout = new QHBoxLayout(header);
-
-    auto *logo = new QLabel("GitHub Client");
+    auto *logo = new QPushButton("GitHub Client");
+    logo->setFlat(true);
+    logo->setCursor(Qt::PointingHandCursor);
     logo->setFont(QFont("Arial", 18, QFont::Bold));
-    logo->setStyleSheet(QString("color: %1;").arg(GitHubColors::HEADER_TEXT));
-    headerLayout->addWidget(logo);
+    logo->setStyleSheet(QString("color: %1; font-weight: bold;").arg(GH::HEADER_TEXT));
+    connect(logo, &QPushButton::clicked, this, &MainWindow::goToHome);
+    lay->addWidget(logo);
 
-    headerLayout->addStretch();
+    QStringList navs = {"Product", "Solutions", "Resources", "Open Source", "Enterprise", "Pricing"};
+    for (const auto &n : navs) {
+        auto *btn = new NavButton(n);
+        lay->addWidget(btn);
+    }
 
-    m_langCombo = new QComboBox();
-    m_langCombo->addItems({"中文", "English"});
-    m_langCombo->setStyleSheet("color: white; background-color: transparent; border: none;");
-    headerLayout->addWidget(m_langCombo);
+    lay->addStretch();
 
-    m_userLabel = new QLabel("");
-    m_userLabel->setStyleSheet(QString("color: %1;").arg(GitHubColors::HEADER_TEXT));
-    headerLayout->addWidget(m_userLabel);
+    auto *searchBtn = new NavButton("Search");
+    searchBtn->setStyleSheet(QString("QPushButton { color: %1; font-size: 14px; background: transparent; "
+                                     "border: 1px solid %2; border-radius: 6px; padding: 4px 12px; } "
+                                     "QPushButton:hover { border-color: %3; }")
+                             .arg(GH::TEXT_SECONDARY, GH::BORDER, GH::TEXT_SECONDARY));
+    connect(searchBtn, &QPushButton::clicked, this, []() {});
+    lay->addWidget(searchBtn);
 
-    m_logoutButton = new QPushButton(getText("logout_button"));
-    m_logoutButton->setStyleSheet(R"(
-        QPushButton {
-            color: white;
-            background-color: transparent;
-            border: 1px solid white;
-            border-radius: 6px;
-            padding: 5px 15px;
-        }
-        QPushButton:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-    )");
-    connect(m_logoutButton, &QPushButton::clicked, this, &MainWindow::logout);
-    headerLayout->addWidget(m_logoutButton);
+    auto *signIn = new QPushButton("Sign in");
+    signIn->setStyleSheet(outlineBtn);
+    connect(signIn, &QPushButton::clicked, this, &MainWindow::goToSignIn);
+    lay->addWidget(signIn);
 
-    layout->addWidget(header);
+    auto *signUp = new QPushButton("Sign up");
+    signUp->setStyleSheet(blueBtn);
+    connect(signUp, &QPushButton::clicked, this, []() {});
+    lay->addWidget(signUp);
+
+    return hdr;
 }
 
-bool MainWindow::login(const QString &token, const QString &cookie, const QString &lang)
+QWidget* MainWindow::createHeaderLoggedIn()
 {
-    setLanguage(lang);
+    auto *hdr = new QFrame();
+    hdr->setStyleSheet(QString("background: %1; padding: 10px 24px;").arg(GH::HEADER_BG));
+    auto *lay = new QHBoxLayout(hdr);
+    lay->setContentsMargins(0, 0, 0, 0);
 
+    auto *logo = new QPushButton("GitHub Client");
+    logo->setFlat(true);
+    logo->setFont(QFont("Arial", 18, QFont::Bold));
+    logo->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
+    connect(logo, &QPushButton::clicked, this, &MainWindow::goToDashboard);
+    lay->addWidget(logo);
+
+    auto *search = new QLineEdit();
+    search->setPlaceholderText("Search or jump to...");
+    search->setFixedWidth(280);
+    search->setStyleSheet(QString("QLineEdit { background: #0d1117; color: #e6edf3; border: 1px solid %1; "
+                                  "border-radius: 6px; padding: 5px 12px; font-size: 13px; } "
+                                  "QLineEdit:focus { border-color: #1f6feb; width: 400px; }").arg(GH::BORDER));
+    connect(search, &QLineEdit::returnPressed, this, []() {});
+    lay->addWidget(search);
+
+    QStringList navs = {"Pull requests", "Issues", "Marketplace", "Explore"};
+    for (const auto &n : navs) {
+        auto *btn = new NavButton(n);
+        lay->addWidget(btn);
+    }
+
+    lay->addStretch();
+
+    m_headerUserLabel = new QLabel();
+    m_headerUserLabel->setStyleSheet(QString("color: %1; font-size: 14px; font-weight: 600;").arg(GH::HEADER_TEXT));
+    lay->addWidget(m_headerUserLabel);
+
+    auto *logout = new QPushButton("Sign out");
+    logout->setStyleSheet(outlineBtn);
+    connect(logout, &QPushButton::clicked, this, &MainWindow::doLogout);
+    lay->addWidget(logout);
+
+    return hdr;
+}
+
+void MainWindow::goToHome()
+{
+    m_pageStack->setCurrentIndex(0);
+    m_headerLoggedOut->show();
+    m_headerLoggedIn->hide();
+}
+
+void MainWindow::goToSignIn()
+{
+    m_pageStack->setCurrentIndex(1);
+}
+
+void MainWindow::doLogin()
+{
+    QString token = m_signInPage->getToken();
+    QString cookie = m_signInPage->getCookie();
+    QString lang = m_signInPage->getLanguage();
+
+    if (token.isEmpty()) {
+        m_signInPage->setStatus("Please enter a token", true);
+        return;
+    }
+
+    m_signInPage->setStatus("Signing in...");
+    setLanguage(lang);
     m_api = new GitHubAPI(token, cookie, this);
 
     m_api->getUser(
         [this](const QJsonObject &user) {
             m_user = user;
-            QString loginName = m_user["login"].toString();
-            m_userLabel->setText(getText("welcome").arg(loginName));
+            m_signInPage->setStatus("");
 
-            auto *reposView = new RepositoriesView(m_api);
-            auto *profileView = new ProfileView(m_api, m_user);
-
-            m_contentStack->addWidget(nullptr); // clear by adding dummy
-            while (m_contentStack->count() > 0) {
-                QWidget *w = m_contentStack->widget(0);
-                m_contentStack->removeWidget(w);
-                if (w) w->deleteLater();
+            // Remove old dashboard
+            while (m_pageStack->count() > 2) {
+                auto *w = m_pageStack->widget(2);
+                m_pageStack->removeWidget(w);
+                w->deleteLater();
             }
 
-            auto *tabs = new QTabWidget();
-            tabs->setStyleSheet(R"(
-                QTabWidget::pane {
-                    border: none;
-                    border-top: 1px solid #d0d7de;
-                }
-                QTabBar::tab {
-                    padding: 10px 20px;
-                    border: none;
-                    border-bottom: 2px solid transparent;
-                }
-                QTabBar::tab:selected {
-                    border-bottom-color: #FD8D77;
-                    color: #24292f;
-                }
-                QTabBar::tab:hover {
-                    background-color: #f6f8fa;
-                }
-            )");
-            tabs->addTab(reposView, "[R] " + getText("repositories_tab"));
-            tabs->addTab(profileView, "[P] " + getText("profile_tab"));
+            m_dashboardPage = new DashboardPage(m_api, m_user);
+            connect(m_dashboardPage, &DashboardPage::repoClicked, this, &MainWindow::openRepoDetail);
+            m_pageStack->addWidget(m_dashboardPage);
 
-            connect(reposView, &RepositoriesView::repoClicked, this, &MainWindow::openRepositoryDetail);
-
-            m_contentStack->addWidget(tabs);
+            goToDashboard();
         },
-        [this](const QString &) {
+        [this](const QString &e) {
             m_api->deleteLater();
             m_api = nullptr;
-            QMessageBox::critical(this, getText("error_title"), getText("token_invalid"));
+            m_signInPage->setStatus("Invalid token: " + e, true);
         }
     );
-    return true;
 }
 
-void MainWindow::logout()
+void MainWindow::goToDashboard()
 {
-    auto reply = QMessageBox::question(this, getText("confirm_logout"), "",
+    m_pageStack->setCurrentIndex(2);
+    m_headerLoggedOut->hide();
+    m_headerLoggedIn->show();
+    m_headerUserLabel->setText(m_user["login"].toString());
+}
+
+void MainWindow::doLogout()
+{
+    auto reply = QMessageBox::question(this, "Sign out", "Are you sure you want to sign out?",
                                         QMessageBox::Yes | QMessageBox::No);
-    if (reply == QMessageBox::Yes) {
-        if (m_api) {
-            m_api->deleteLater();
-            m_api = nullptr;
-        }
-        m_user = QJsonObject();
-        m_repoStack.clear();
+    if (reply != QMessageBox::Yes) return;
 
-        while (m_contentStack->count() > 0) {
-            QWidget *w = m_contentStack->widget(0);
-            m_contentStack->removeWidget(w);
-            if (w) w->deleteLater();
-        }
-        m_contentStack->addWidget(new QWidget());
-
-        showLoginDialog();
-    }
+    if (m_api) { m_api->deleteLater(); m_api = nullptr; }
+    m_user = QJsonObject();
+    goToHome();
 }
 
-void MainWindow::openRepositoryDetail(const QJsonObject &repo)
+void MainWindow::openRepoDetail(const QJsonObject &repo)
 {
-    auto *detailView = new RepositoryDetailView(m_api, repo, [this]() { goBack(); });
-    m_repoStack.append(m_contentStack->currentWidget());
-    m_contentStack->addWidget(detailView);
-    m_contentStack->setCurrentIndex(m_contentStack->count() - 1);
-}
-
-void MainWindow::goBack()
-{
-    if (!m_repoStack.isEmpty()) {
-        QWidget *current = m_contentStack->currentWidget();
-        m_contentStack->removeWidget(current);
-        current->deleteLater();
-
-        QWidget *prev = m_repoStack.takeLast();
-        m_contentStack->addWidget(prev);
-        m_contentStack->setCurrentWidget(prev);
-    }
-}
-
-void MainWindow::showLoginDialog()
-{
-    LoginDialog dialog(this);
-    if (dialog.exec() == QDialog::Accepted) {
-        QString token = dialog.getToken();
-        QString cookie = dialog.getCookie();
-        QString lang = dialog.getLanguage();
-
-        if (!token.isEmpty()) {
-            login(token, cookie, lang);
-        } else {
-            QMessageBox::warning(this, getText("error_title"), getText("login_required"));
-        }
+    if (m_dashboardPage) {
+        m_dashboardPage->openRepositoryDetail(repo);
     }
 }

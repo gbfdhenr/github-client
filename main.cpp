@@ -8,25 +8,9 @@ int main(int argc, char *argv[])
 
     app.setOrganizationName("GitHubClient");
     app.setApplicationName("GitHub Client");
-    app.setApplicationVersion("0.0.2");
-
-    app.setStyleSheet(R"(
-        QMainWindow {
-            background-color: #ffffff;
-        }
-        QLabel {
-            color: #24292f;
-        }
-        QTableWidget::item {
-            padding: 8px;
-        }
-        QTreeWidget::item {
-            padding: 6px;
-        }
-    )");
+    app.setApplicationVersion("0.0.3");
 
     MainWindow window;
-    window.showLoginDialog();
     window.show();
 
     return app.exec();

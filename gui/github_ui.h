@@ -22,65 +22,120 @@
 #include <QTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QPropertyAnimation>
+#include <QPainter>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QProgressBar>
 #include <functional>
 
 #include "api/github_api.h"
 #include "i18n/translations.h"
 
 namespace GitHubColors {
-    constexpr const char *HEADER_BG = "#24292f";
-    constexpr const char *HEADER_TEXT = "#ffffff";
-    constexpr const char *SIDEBAR_BG = "#f6f8fa";
-    constexpr const char *MAIN_BG = "#ffffff";
-    constexpr const char *BORDER = "#d0d7de";
-    constexpr const char *BUTTON_PRIMARY = "#2da44e";
-    constexpr const char *BUTTON_PRIMARY_HOVER = "#2c974b";
-    constexpr const char *BUTTON_SECONDARY = "#f3f4f6";
-    constexpr const char *LINK = "#0969da";
-    constexpr const char *TEXT_PRIMARY = "#24292f";
-    constexpr const char *TEXT_SECONDARY = "#57606a";
-    constexpr const char *SUCCESS = "#1a7f37";
-    constexpr const char *DANGER = "#cf222e";
-    constexpr const char *WARNING = "#9a6700";
+    constexpr const char *HEADER_BG = "#0d1117";
+    constexpr const char *HEADER_TEXT = "#e6edf3";
+    constexpr const char *HEADER_TEXT_MUTED = "#8b949e";
+    constexpr const char *SIDEBAR_BG = "#0d1117";
+    constexpr const char *MAIN_BG = "#0d1117";
+    constexpr const char *CARD_BG = "#161b22";
+    constexpr const char *BORDER = "#30363d";
+    constexpr const char *BUTTON_PRIMARY = "#238636";
+    constexpr const char *BUTTON_PRIMARY_HOVER = "#2ea043";
+    constexpr const char *LINK = "#58a6ff";
+    constexpr const char *TEXT_PRIMARY = "#e6edf3";
+    constexpr const char *TEXT_SECONDARY = "#8b949e";
+    constexpr const char *SUCCESS = "#3fb950";
+    constexpr const char *DANGER = "#f85149";
+    constexpr const char *WARNING = "#d29922";
+    constexpr const char *PURPLE = "#a371f7";
 }
 
-class AvatarLabel : public QLabel {
+class SpinnerWidget : public QWidget {
     Q_OBJECT
+    Q_PROPERTY(int angle READ angle WRITE setAngle)
 public:
-    explicit AvatarLabel(QWidget *parent = nullptr);
-    void loadImage(const QString &url);
+    explicit SpinnerWidget(QWidget *parent = nullptr, int size = 40);
+    void start();
+    void stop();
+    int angle() const { return m_angle; }
+    void setAngle(int a) { m_angle = a; update(); }
+
+protected:
+    void paintEvent(QPaintEvent *) override;
 
 private:
-    QNetworkAccessManager *m_networkManager;
-
-private slots:
-    void onImageLoaded(QNetworkReply *reply);
+    int m_angle;
+    int m_size;
+    QTimer *m_timer;
 };
+
+class LoadingLabel : public QWidget {
+    Q_OBJECT
+public:
+    explicit LoadingLabel(const QString &text = "", QWidget *parent = nullptr);
+    void setLoadingText(const QString &text);
+
+private:
+    SpinnerWidget *m_spinner;
+    QLabel *m_label;
+};
+
+class ClickableFrame : public QFrame {
+    Q_OBJECT
+public:
+    explicit ClickableFrame(QWidget *parent = nullptr);
+signals:
+    void clicked();
+protected:
+    void mousePressEvent(QMouseEvent *) override { emit clicked(); }
+};
+
+class NavButton : public QPushButton {
+    Q_OBJECT
+public:
+    explicit NavButton(const QString &text, QWidget *parent = nullptr);
+};
+
+class HomePage : public QWidget {
+    Q_OBJECT
+public:
+    explicit HomePage(QWidget *parent = nullptr);
+signals:
+    void signInClicked();
+    void signUpClicked();
+    void searchClicked();
+
+private:
+    void setupUi();
+};
+
+class SignInPage;
 
 class BrowserCookieDialog : public QDialog {
     Q_OBJECT
 public:
     explicit BrowserCookieDialog(QWidget *parent = nullptr);
     QMap<QString, QString> selectedCookies() const { return m_selectedCookies; }
-
 private:
     QLabel *m_statusLabel;
     QMap<QString, QString> m_selectedCookies;
-
-    void setupUi();
     void onBrowserSelected(const QString &browser);
 };
 
-class LoginDialog : public QDialog {
+class SignInPage : public QWidget {
     Q_OBJECT
 public:
-    explicit LoginDialog(QWidget *parent = nullptr);
+    explicit SignInPage(QWidget *parent = nullptr);
     QString getToken() const;
     QString getCookie() const;
     QString getLanguage() const;
+    void setStatus(const QString &msg, bool error = false);
+
+signals:
+    void signInRequested();
+    void backRequested();
 
 private:
     QLineEdit *m_tokenInput;
@@ -92,15 +147,14 @@ private:
     void importFromBrowser();
 };
 
-class RepoCard : public QFrame {
+class RepoCard : public ClickableFrame {
     Q_OBJECT
 public:
-    explicit RepoCard(const QJsonObject &repoData, std::function<void(const QJsonObject &)> onClick = nullptr);
-
+    explicit RepoCard(const QJsonObject &repoData, QWidget *parent = nullptr);
+signals:
+    void clicked(const QJsonObject &repo);
 private:
     QJsonObject m_repoData;
-    std::function<void(const QJsonObject &)> m_onClick;
-
     void setupUi();
 };
 
@@ -109,15 +163,12 @@ class RepoFilesView : public QWidget {
 public:
     explicit RepoFilesView(GitHubAPI *api, const QString &owner, const QString &repo,
                            QWidget *parent = nullptr);
-
 private:
     GitHubAPI *m_api;
-    QString m_owner;
-    QString m_repo;
-    QString m_currentPath;
-    QString m_branch;
+    QString m_owner, m_repo, m_currentPath, m_branch;
     QLabel *m_pathLabel;
     QTreeWidget *m_fileTree;
+    LoadingLabel *m_loading;
 
     void setupUi();
     void loadFiles();
@@ -125,38 +176,37 @@ private:
     void onItemDoubleClicked(QTreeWidgetItem *item, int column);
     void showFileContent(const QJsonObject &fileData);
     void onError(const QString &error);
-
     static QString formatSize(int size);
 };
 
-class RepoIssuesView : public QTableWidget {
+class RepoIssuesView : public QWidget {
     Q_OBJECT
 public:
     explicit RepoIssuesView(GitHubAPI *api, const QString &owner, const QString &repo,
                             QWidget *parent = nullptr);
-
 private:
     GitHubAPI *m_api;
-    QString m_owner;
-    QString m_repo;
-
+    QString m_owner, m_repo;
+    QStackedWidget *m_stack;
+    LoadingLabel *m_loading;
+    QTableWidget *m_table;
     void setupUi();
     void loadIssues();
     void onIssuesLoaded(const QJsonArray &issues);
     void onError(const QString &error);
 };
 
-class RepoPRsView : public QTableWidget {
+class RepoPRsView : public QWidget {
     Q_OBJECT
 public:
     explicit RepoPRsView(GitHubAPI *api, const QString &owner, const QString &repo,
                          QWidget *parent = nullptr);
-
 private:
     GitHubAPI *m_api;
-    QString m_owner;
-    QString m_repo;
-
+    QString m_owner, m_repo;
+    QStackedWidget *m_stack;
+    LoadingLabel *m_loading;
+    QTableWidget *m_table;
     void setupUi();
     void loadPRs();
     void onPRsLoaded(const QJsonArray &prs);
@@ -167,31 +217,27 @@ class RepositoryDetailView : public QWidget {
     Q_OBJECT
 public:
     explicit RepositoryDetailView(GitHubAPI *api, const QJsonObject &repoData,
-                                   std::function<void()> onBack = nullptr,
                                    QWidget *parent = nullptr);
-
+signals:
+    void backRequested();
 private:
     GitHubAPI *m_api;
     QJsonObject m_repoData;
-    std::function<void()> m_onBack;
-
     void setupUi();
-    void goBack();
 };
 
 class RepositoriesView : public QWidget {
     Q_OBJECT
 public:
     explicit RepositoriesView(GitHubAPI *api, QWidget *parent = nullptr);
-
 signals:
     void repoClicked(const QJsonObject &repo);
-
 private:
     GitHubAPI *m_api;
+    QStackedWidget *m_stack;
+    LoadingLabel *m_loading;
     QScrollArea *m_scroll;
     QVBoxLayout *m_cardsLayout;
-
     void setupUi();
     void loadRepositories();
     void onReposLoaded(const QJsonArray &repos);
@@ -202,33 +248,52 @@ class ProfileView : public QWidget {
     Q_OBJECT
 public:
     explicit ProfileView(GitHubAPI *api, const QJsonObject &userData, QWidget *parent = nullptr);
-
 private:
     GitHubAPI *m_api;
     QJsonObject m_userData;
-
     void setupUi();
+};
+
+class DashboardPage : public QWidget {
+    Q_OBJECT
+public:
+    explicit DashboardPage(GitHubAPI *api, const QJsonObject &user, QWidget *parent = nullptr);
+    void openRepositoryDetail(const QJsonObject &repo);
+signals:
+    void repoClicked(const QJsonObject &repo);
+    void logoutRequested();
+private:
+    GitHubAPI *m_api;
+    QJsonObject m_user;
+    QStackedWidget *m_contentStack;
+    QVector<QWidget *> m_repoStack;
+    void setupUi();
+    void goBack();
 };
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    void showLoginDialog();
 
 private:
     GitHubAPI *m_api;
     QJsonObject m_user;
-    QStackedWidget *m_contentStack;
-    QComboBox *m_langCombo;
-    QLabel *m_userLabel;
-    QPushButton *m_logoutButton;
-    QVector<QWidget *> m_repoStack;
+    QStackedWidget *m_pageStack;
+    HomePage *m_homePage;
+    SignInPage *m_signInPage;
+    DashboardPage *m_dashboardPage;
+    QWidget *m_headerLoggedOut;
+    QWidget *m_headerLoggedIn;
+    QLabel *m_headerUserLabel;
 
     void setupUi();
-    void setupHeader(QVBoxLayout *layout);
-    bool login(const QString &token, const QString &cookie, const QString &lang);
-    void logout();
-    void openRepositoryDetail(const QJsonObject &repo);
-    void goBack();
+    void goToHome();
+    void goToSignIn();
+    void goToDashboard();
+    void doLogin();
+    void doLogout();
+    void openRepoDetail(const QJsonObject &repo);
+    QWidget* createHeaderLoggedOut();
+    QWidget* createHeaderLoggedIn();
 };
