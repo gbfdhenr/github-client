@@ -2,8 +2,6 @@ name: Build Cross-Platform
 
 on:
   push:
-    branches: [main]
-    paths: ['ver.txt', 'desc.txt']
   workflow_dispatch:
 
 permissions:
@@ -13,110 +11,221 @@ jobs:
   get-version:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.read-ver.outputs.version }}
-      description: ${{ steps.read-desc.outputs.description }}
+      version: ${{ steps.read-cmake.outputs.version }}
+      short_sha: ${{ steps.read-cmake.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Read version
-        id: read-ver
-        run: echo "version=$(cat ver.txt | tr -d '\r\n')" >> $GITHUB_OUTPUT
-      
-      - name: Read description
-        id: read-desc
+
+      - name: Extract version from CMakeLists.txt
+        id: read-cmake
         run: |
-          if [ -f desc.txt ]; then
-            desc=$(cat desc.txt | tr -d '\r\n')
-            echo "description=$desc" >> $GITHUB_OUTPUT
-          else
-            echo "description=Release v${{ steps.read-ver.outputs.version }}" >> $GITHUB_OUTPUT
-          fi
+          version=$(grep -oP 'VERSION \K[0-9.]+' CMakeLists.txt)
+          sha=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${version}-${sha}" >> $GITHUB_OUTPUT
+          echo "short_sha=${sha}" >> $GITHUB_OUTPUT
 
   build-windows:
     needs: get-version
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install Qt5
+        uses: jurplel/install-qt-action@v4
         with:
-          python-version: '3.11'
+          version: '5.15.2'
+          arch: win64_msvc2019_64
+          modules: 'qtnetworkauth'
 
-      - name: Install dependencies
+      - name: Install OpenSSL
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          choco install openssl --version=3.4.1 -y
+          echo "OPENSSL_ROOT_DIR=C:/Program Files/OpenSSL-Win64" >> $GITHUB_ENV
 
-      - name: Build with PyInstaller
+      - name: Install SQLite3
         shell: bash
         run: |
-          pyinstaller --onefile --windowed --name "GitHubClient" main.py
+          curl -L -o sqlite.zip https://www.sqlite.org/2025/sqlite-dll-win-x64-3490100.zip
+          unzip sqlite.zip -d sqlite3
+          echo "SQLITE3_ROOT=${{ github.workspace }}/sqlite3" >> $GITHUB_ENV
+
+      - name: Configure CMake
+        shell: bash
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR" \
+            -DSQLite3_INCLUDE_DIR="$SQLITE3_ROOT" \
+            -DSQLite3_LIBRARY="$SQLITE3_ROOT/sqlite3.lib"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Deploy with windeployqt
+        shell: bash
+        run: |
+          windeployqt --release --no-translations build/Release/GitHubClient.exe
+          cp "$SQLITE3_ROOT/sqlite3.dll" build/Release/
+          cp "$OPENSSL_ROOT_DIR/bin/libcrypto-3-x64.dll" build/Release/ 2>/dev/null || \
+            cp "$OPENSSL_ROOT_DIR/bin/libcrypto*.dll" build/Release/
+          cp "$OPENSSL_ROOT_DIR/bin/libssl-3-x64.dll" build/Release/ 2>/dev/null || \
+            cp "$OPENSSL_ROOT_DIR/bin/libssl*.dll" build/Release/
+
+      - name: Package as zip
+        shell: bash
+        run: |
+          cd build/Release
+          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll platforms/ styles/ imageformats/ 2>/dev/null
+          7z a ../../GitHubClient-Windows-x64.zip *.exe *.dll 2>/dev/null
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GitHubClient-Windows-x64.exe
-          path: dist/GitHubClient.exe
+          name: GitHubClient-Windows-x64
+          path: GitHubClient-Windows-x64.zip
 
-  build-linux:
+  build-linux-deb:
     needs: get-version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake g++ qtbase5-dev libqt5sql5-sqlite \
+            libssl-dev libsqlite3-dev dpkg-dev
 
-      - name: Build with PyInstaller
+      - name: Configure CMake
         run: |
-          pyinstaller --onefile --windowed --name "GitHubClient" main.py
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN/../lib/github-client'
 
-      - name: Upload Linux artifact
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Create DEB package structure
+        id: deb
+        run: |
+          VERSION="${{ needs.get-version.outputs.version }}"
+          DEB_NAME="githubclient_${VERSION}_amd64"
+          DEB_ROOT="packaging/${DEB_NAME}"
+
+          mkdir -p ${DEB_ROOT}/DEBIAN
+          mkdir -p ${DEB_ROOT}/usr/bin
+          mkdir -p ${DEB_ROOT}/usr/lib/github-client
+          mkdir -p ${DEB_ROOT}/usr/share/applications
+          mkdir -p ${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps
+
+          # Copy binary
+          cp build/GitHubClient ${DEB_ROOT}/usr/bin/
+
+          # Copy bundled shared libraries
+          for lib in $(ldd build/GitHubClient | grep -oP '/[^ ]+(?:libQt5|libssl|libcrypto|libsqlite3)[^ ]*\.so[^ ]*'); do
+            cp -v "$lib" ${DEB_ROOT}/usr/lib/github-client/
+          done
+
+          # Copy Qt platform plugin
+          QT_PLUGIN_DIR=$(dpkg -L qtbase5-dev | grep '/plugins/platforms$' | head -1 || \
+            find /usr/lib -path '*/plugins/platforms' -type d 2>/dev/null | head -1)
+          if [ -n "$QT_PLUGIN_DIR" ]; then
+            mkdir -p ${DEB_ROOT}/usr/lib/github-client/platforms
+            cp ${QT_PLUGIN_DIR}/libqxcb.so ${DEB_ROOT}/usr/lib/github-client/platforms/
+          fi
+
+          # Create wrapper script
+          cat > ${DEB_ROOT}/usr/bin/githubclient << 'WRAPPER'
+          #!/bin/bash
+          export QT_PLUGIN_PATH=/usr/lib/github-client
+          export LD_LIBRARY_PATH=/usr/lib/github-client:${LD_LIBRARY_PATH}
+          exec /usr/bin/GitHubClient "$@"
+          WRAPPER
+          chmod +x ${DEB_ROOT}/usr/bin/githubclient
+
+          # Create .desktop entry
+          cat > ${DEB_ROOT}/usr/share/applications/githubclient.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=GitHub Client
+          Comment=GitHub Desktop Client
+          Exec=/usr/bin/githubclient
+          Icon=githubclient
+          Categories=Development;
+          Terminal=false
+          DESKTOP
+
+          # Create control file
+          cat > ${DEB_ROOT}/DEBIAN/control << CONTROL
+          Package: githubclient
+          Version: ${VERSION}
+          Architecture: amd64
+          Maintainer: gbfdhenr <gbfdhenr@163.com>
+          Depends: libc6 (>= 2.34), libstdc++6 (>= 9)
+          Description: GitHub Desktop Client
+           A C++/Qt5 native GitHub desktop client with dark theme,
+           featuring repository browsing and cookie-based authentication.
+          CONTROL
+
+          # Build the deb
+          dpkg-deb --build ${DEB_ROOT}
+          mv packaging/${DEB_NAME}.deb .
+
+          echo "deb_file=${DEB_NAME}.deb" >> $GITHUB_OUTPUT
+
+      - name: Upload DEB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GitHubClient-Linux-x64
-          path: dist/GitHubClient
+          name: GitHubClient-Linux-amd64-deb
+          path: "*.deb"
 
   build-macos:
     needs: get-version
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Install Qt5
+        run: brew install qt@5
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+      - name: Install OpenSSL and SQLite3
+        run: brew install openssl@3 sqlite3
 
-      - name: Build with PyInstaller
+      - name: Configure CMake
         run: |
-          pyinstaller --onefile --windowed --name "GitHubClient" main.py
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="/usr/local/opt/qt@5" \
+            -DOPENSSL_ROOT_DIR="/usr/local/opt/openssl@3"
+            -DSQLite3_INCLUDE_DIR="/usr/local/opt/sqlite3/include" \
+            -DSQLite3_LIBRARY="/usr/local/opt/sqlite3/lib/libsqlite3.dylib"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Deploy with macdeployqt
+        run: |
+          /usr/local/opt/qt@5/bin/macdeployqt build/GitHubClient.app -verbose=2
+
+      - name: Package as dmg
+        run: |
+          hdiutil create -volname "GitHubClient" -srcfolder build/GitHubClient.app \
+            -ov -format UDZO GitHubClient-macOS-x64.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GitHubClient-macOS-x64.app
-          path: dist/GitHubClient.app
+          name: GitHubClient-macOS-x64
+          path: GitHubClient-macOS-x64.dmg
 
   release:
-    needs: [get-version, build-windows, build-linux, build-macos]
+    needs: [get-version, build-windows, build-linux-deb, build-macos]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -124,15 +233,26 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts
+        run: find artifacts -type f
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ needs.get-version.outputs.version }}
           name: GitHubClient v${{ needs.get-version.outputs.version }}
-          body: ${{ needs.get-version.outputs.description }}
+          body: |
+            ## GitHub Client v${{ needs.get-version.outputs.version }}
+
+            C++/Qt5 native GitHub desktop client.
+
+            - **Windows**: unzip and run `GitHubClient.exe`
+            - **Linux**: `sudo dpkg -i githubclient_*.deb` then run `githubclient`
+            - **macOS**: open `.dmg` and drag to Applications
+
+            Built from ${{ github.sha }}
           files: |
-            artifacts/GitHubClient-Windows-x64.exe/GitHubClient.exe
-            artifacts/GitHubClient-Linux-x64/GitHubClient
-            artifacts/GitHubClient-macOS-x64.app/GitHubClient.app
+            artifacts/**/*
+          prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
