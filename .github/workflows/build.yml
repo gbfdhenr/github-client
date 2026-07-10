@@ -140,8 +140,11 @@ jobs:
           # Copy binary
           cp build/GitHubClient ${DEB_ROOT}/usr/bin/
 
-          # Copy bundled shared libraries
-          for lib in $(ldd build/GitHubClient | grep -oP '/[^ ]+(?:libQt5|libssl|libcrypto|libsqlite3)[^ ]*\.so[^ ]*'); do
+          # Copy bundled shared libraries (all non-system deps)
+          SYSTEM_LIBS='linux-vdso|ld-linux|libc\.|libm\.|libpthread|libdl\.|librt\.|libstdc\+\+|libgcc_s|libresolv'
+          for lib in $(ldd build/GitHubClient | sed -n 's|.*=> \(/usr/[^ ]*\).*|\1|p'); do
+            name=$(basename "$lib")
+            if echo "$name" | grep -qE "$SYSTEM_LIBS"; then continue; fi
             cp -v "$lib" ${DEB_ROOT}/usr/lib/github-client/
           done
 
