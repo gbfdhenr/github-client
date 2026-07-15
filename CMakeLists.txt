@@ -23,6 +23,7 @@ set(HEADERS
     api/github_api.h
     utils/browser_cookies.h
     gui/github_ui.h
+    gui/local_asset_handler.h
 )
 
 set(RESOURCES
