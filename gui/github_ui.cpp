@@ -182,9 +182,6 @@ void HomePage::setupUi()
     webView->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, false);
     webView->settings()->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
 
-    connect(page, &GitHubWebPage::signInDetected, this, &HomePage::signInClicked);
-    connect(page, &GitHubWebPage::signUpDetected, this, &HomePage::signUpClicked);
-
     webView->load(QUrl("local:///"));
 
     main->addWidget(webView);

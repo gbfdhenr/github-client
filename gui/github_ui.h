@@ -67,16 +67,24 @@ signals:
     void signUpDetected();
 protected:
     bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override {
-        if (type != NavigationTypeLinkClicked) return true;
-        QString host = url.host();
-        if (host == "github.com" || host == "www.github.com") {
-            if (url.path().startsWith("/login")) { emit signInDetected(); return false; }
-            if (url.path().startsWith("/signup")) { emit signUpDetected(); return false; }
-            load(url);
+        Q_UNUSED(type)
+        Q_UNUSED(isMainFrame)
+        if (url.scheme() == "local") return true;
+        if (url.host() == "github.com") {
+            if (url.path().startsWith("/login")) {
+                load(QUrl("local://login"));
+                return false;
+            }
+            if (url.path().startsWith("/signup")) {
+                load(QUrl("local://signup"));
+                return false;
+            }
+        }
+        if (url.host() != "github.com" && !url.host().isEmpty()) {
+            QDesktopServices::openUrl(url);
             return false;
         }
-        QDesktopServices::openUrl(url);
-        return false;
+        return true;
     }
 };
 

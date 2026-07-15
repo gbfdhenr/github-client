@@ -17,6 +17,10 @@ public:
         QString filePath;
         if (path == "/" || path.isEmpty()) {
             filePath = ":/homepage.html";
+        } else if (path == "/login") {
+            filePath = ":/login.html";
+        } else if (path == "/signup") {
+            filePath = ":/signup.html";
         } else if (path.startsWith("/assets/")) {
             filePath = ":/github_files/" + path.mid(8);
         } else if (path.startsWith("/fonts/")) {
