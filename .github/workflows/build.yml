@@ -37,7 +37,7 @@ jobs:
         with:
           version: '5.15.2'
           arch: win64_msvc2019_64
-          modules: 'qtnetworkauth'
+          modules: 'qtnetworkauth qtwebengine'
 
       - name: Install OpenSSL
         shell: bash
@@ -111,8 +111,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake g++ qtbase5-dev libqt5sql5-sqlite \
-            libssl-dev libsqlite3-dev dpkg-dev
+            cmake g++ qtbase5-dev qtwebengine5-dev libqt5sql5-sqlite \
+            libqt5webenginewidgets5 libssl-dev libsqlite3-dev dpkg-dev
 
       - name: Configure CMake
         run: |
