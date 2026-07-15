@@ -22,7 +22,6 @@
 #include <QWebEnginePage>
 #include <QWebEngineProfile>
 #include <QWebEngineSettings>
-#include <QFile>
 
 namespace GH = GitHubColors;
 
@@ -186,14 +185,7 @@ void HomePage::setupUi()
     connect(page, &GitHubWebPage::signInDetected, this, &HomePage::signInClicked);
     connect(page, &GitHubWebPage::signUpDetected, this, &HomePage::signUpClicked);
 
-    QFile f(":/homepage.html");
-    if (f.open(QIODevice::ReadOnly)) {
-        QString html = QString::fromUtf8(f.readAll());
-        webView->setHtml(html, QUrl("https://github.com/"));
-        f.close();
-    } else {
-        webView->load(QUrl("https://github.com/"));
-    }
+    webView->load(QUrl("local:///"));
 
     main->addWidget(webView);
 }

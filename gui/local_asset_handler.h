@@ -14,11 +14,10 @@ public:
     void requestStarted(QWebEngineUrlRequestJob *job) override {
         QString path = job->requestUrl().path();
 
-        // Map local://assets/xxx → qrc:/github_files/xxx
-        // Map local://fonts/xxx  → qrc:/fonts/xxx
-        // Map local://favicons/xxx → qrc:/favicons/xxx
         QString filePath;
-        if (path.startsWith("/assets/")) {
+        if (path == "/" || path.isEmpty()) {
+            filePath = ":/homepage.html";
+        } else if (path.startsWith("/assets/")) {
             filePath = ":/github_files/" + path.mid(8);
         } else if (path.startsWith("/fonts/")) {
             filePath = ":/fonts/" + path.mid(7);

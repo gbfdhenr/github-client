@@ -9,6 +9,10 @@ int main(int argc, char *argv[])
     QWebEngineUrlScheme localScheme("local");
     localScheme.setSyntax(QWebEngineUrlScheme::Syntax::Path);
     localScheme.setDefaultPort(QWebEngineUrlScheme::PortUnspecified);
+    localScheme.setFlags(QWebEngineUrlScheme::SecureScheme
+                       | QWebEngineUrlScheme::LocalScheme
+                       | QWebEngineUrlScheme::LocalAccessAllowed
+                       | QWebEngineUrlScheme::ContentSecurityPolicyIgnored);
     QWebEngineUrlScheme::registerScheme(localScheme);
 
     QApplication app(argc, argv);
