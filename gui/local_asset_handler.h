@@ -16,11 +16,14 @@ public:
 
         // Map local://assets/xxx → qrc:/github_files/xxx
         // Map local://fonts/xxx  → qrc:/fonts/xxx
+        // Map local://favicons/xxx → qrc:/favicons/xxx
         QString filePath;
         if (path.startsWith("/assets/")) {
             filePath = ":/github_files/" + path.mid(8);
         } else if (path.startsWith("/fonts/")) {
             filePath = ":/fonts/" + path.mid(7);
+        } else if (path.startsWith("/favicons/")) {
+            filePath = ":/favicons/" + path.mid(10);
         } else {
             job->fail(QWebEngineUrlRequestJob::UrlNotFound);
             return;
