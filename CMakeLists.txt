@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt5 REQUIRED COMPONENTS Widgets Network Sql)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Network Sql WebEngineWidgets)
 find_package(OpenSSL REQUIRED)
 find_package(SQLite3 REQUIRED)
 
@@ -25,7 +25,11 @@ set(HEADERS
     gui/github_ui.h
 )
 
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+set(RESOURCES
+    resources/resources.qrc
+)
+
+add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR})
 
@@ -33,6 +37,7 @@ target_link_libraries(${PROJECT_NAME}
     Qt5::Widgets
     Qt5::Network
     Qt5::Sql
+    Qt5::WebEngineWidgets
     OpenSSL::SSL
     OpenSSL::Crypto
     SQLite::SQLite3

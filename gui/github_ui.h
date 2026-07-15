@@ -28,6 +28,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProgressBar>
+#include <QWebEngineView>
+#include <QWebEnginePage>
+#include <QWebEngineProfile>
+#include <QWebEngineSettings>
+#include <QDesktopServices>
+#include <QUrl>
 #include <functional>
 
 #include "api/github_api.h"
@@ -51,6 +57,28 @@ namespace GitHubColors {
     constexpr const char *WARNING = "#d29922";
     constexpr const char *PURPLE = "#a371f7";
 }
+
+class GitHubWebPage : public QWebEnginePage {
+    Q_OBJECT
+public:
+    explicit GitHubWebPage(QObject *parent = nullptr) : QWebEnginePage(parent) {}
+signals:
+    void signInDetected();
+    void signUpDetected();
+protected:
+    bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override {
+        if (type != NavigationTypeLinkClicked) return true;
+        QString host = url.host();
+        if (host == "github.com" || host == "www.github.com") {
+            if (url.path().startsWith("/login")) { emit signInDetected(); return false; }
+            if (url.path().startsWith("/signup")) { emit signUpDetected(); return false; }
+            load(url);
+            return false;
+        }
+        QDesktopServices::openUrl(url);
+        return false;
+    }
+};
 
 class SpinnerWidget : public QWidget {
     Q_OBJECT

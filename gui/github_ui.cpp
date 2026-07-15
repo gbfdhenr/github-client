@@ -18,6 +18,11 @@
 #include <QScrollBar>
 #include <QDialogButtonBox>
 #include <QtMath>
+#include <QWebEngineView>
+#include <QWebEnginePage>
+#include <QWebEngineProfile>
+#include <QWebEngineSettings>
+#include <QFile>
 
 namespace GH = GitHubColors;
 
@@ -164,138 +169,33 @@ void HomePage::setupUi()
     auto *main = new QVBoxLayout(this);
     main->setContentsMargins(0, 0, 0, 0);
     main->setSpacing(0);
-    setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
 
-    auto *wrap = new QWidget();
-    wrap->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
-    auto *lay = new QVBoxLayout(wrap);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
+    auto *webView = new QWebEngineView(this);
+    auto *page = new GitHubWebPage(webView);
+    webView->setPage(page);
 
-    // Hero section
-    auto *hero = new QWidget();
-    hero->setMinimumHeight(520);
-    hero->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
-    auto *heroLay = new QVBoxLayout(hero);
-    heroLay->setAlignment(Qt::AlignCenter);
-    heroLay->setSpacing(24);
+    QWebEngineProfile *profile = page->profile();
+    profile->setHttpCacheType(QWebEngineProfile::DiskHttpCache);
+    profile->setPersistentCookiesPolicy(QWebEngineProfile::AllowPersistentCookies);
+    webView->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
+    webView->settings()->setAttribute(QWebEngineSettings::LocalStorageEnabled, true);
+    webView->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
+    webView->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, false);
+    webView->settings()->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, false);
 
-    auto *tagBadge = new QLabel("  The world's leading AI-powered developer platform  ");
-    tagBadge->setStyleSheet("color: #8b949e; font-size: 13px; border: 1px solid #30363d; "
-                            "border-radius: 20px; padding: 5px 16px; background: #161b22;");
-    tagBadge->setAlignment(Qt::AlignCenter);
-    auto *badgeWrap = new QHBoxLayout();
-    badgeWrap->setAlignment(Qt::AlignCenter);
-    badgeWrap->addWidget(tagBadge);
-    heroLay->addLayout(badgeWrap);
+    connect(page, &GitHubWebPage::signInDetected, this, &HomePage::signInClicked);
+    connect(page, &GitHubWebPage::signUpDetected, this, &HomePage::signUpClicked);
 
-    auto *title = new QLabel("Change is constant.\nGitHub keeps you ahead.");
-    title->setFont(QFont("Arial", 40, QFont::Bold));
-    title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet(QString("color: %1;").arg(GH::HEADER_TEXT));
-    heroLay->addWidget(title);
-
-    auto *sub = new QLabel("Millions of developers, businesses, and the largest open source\n"
-                           "community build software that advances humanity.");
-    sub->setAlignment(Qt::AlignCenter);
-    sub->setStyleSheet(QString("color: %1; font-size: 18px; line-height: 1.6;").arg(GH::TEXT_SECONDARY));
-    heroLay->addWidget(sub);
-
-    auto *btnRow = new QHBoxLayout();
-    btnRow->setAlignment(Qt::AlignCenter);
-    btnRow->setSpacing(16);
-    auto *signInBtn = new QPushButton("Sign in");
-    signInBtn->setStyleSheet(outlineBtn);
-    signInBtn->setFixedWidth(160);
-    connect(signInBtn, &QPushButton::clicked, this, &HomePage::signInClicked);
-    btnRow->addWidget(signInBtn);
-
-    auto *signUpBtn = new QPushButton("Sign up");
-    signUpBtn->setStyleSheet(blueBtn);
-    signUpBtn->setFixedWidth(160);
-    connect(signUpBtn, &QPushButton::clicked, this, &HomePage::signUpClicked);
-    btnRow->addWidget(signUpBtn);
-    heroLay->addLayout(btnRow);
-
-    // Search bar placeholder
-    auto *searchRow = new QHBoxLayout();
-    searchRow->setAlignment(Qt::AlignCenter);
-    auto *searchBox = new QFrame();
-    searchBox->setFixedSize(500, 50);
-    searchBox->setStyleSheet("background: #0d1117; border: 1px solid #30363d; border-radius: 6px;");
-    auto *searchInner = new QHBoxLayout(searchBox);
-    auto *searchHint = new QLabel("  Search or jump to...");
-    searchHint->setStyleSheet("color: #484f58; font-size: 14px;");
-    searchInner->addWidget(searchHint);
-    searchInner->addStretch();
-    searchRow->addWidget(searchBox);
-    heroLay->addLayout(searchRow);
-
-    lay->addWidget(hero);
-
-    // Section divider
-    auto *div = new QFrame();
-    div->setFixedHeight(1);
-    div->setStyleSheet("background: #21262d;");
-    lay->addWidget(div);
-
-    // Feature sections with loading spinners
-    auto *featWrap = new QWidget();
-    featWrap->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
-    auto *featLay = new QHBoxLayout(featWrap);
-    featLay->setSpacing(24);
-    featLay->setContentsMargins(60, 60, 60, 60);
-
-    for (int i = 0; i < 3; ++i) {
-        auto *card = new QFrame();
-        card->setStyleSheet("background: #161b22; border: 1px solid #30363d; border-radius: 12px;");
-        card->setMinimumHeight(280);
-        auto *cardLay = new QVBoxLayout(card);
-        cardLay->setAlignment(Qt::AlignCenter);
-        cardLay->setSpacing(16);
-
-        auto *iconColor = (i == 0) ? "#58a6ff" : (i == 1) ? "#3fb950" : "#a371f7";
-        auto *icon = new QLabel();
-        icon->setFixedSize(48, 48);
-        icon->setStyleSheet(QString("background: %1; border-radius: 12px;").arg(iconColor));
-        icon->setAlignment(Qt::AlignCenter);
-        cardLay->addWidget(icon, 0, Qt::AlignCenter);
-
-        auto *ld = new LoadingLabel("Connecting...", card);
-        cardLay->addWidget(ld);
-        featLay->addWidget(card);
+    QFile f(":/homepage.html");
+    if (f.open(QIODevice::ReadOnly)) {
+        QString html = QString::fromUtf8(f.readAll());
+        webView->setHtml(html, QUrl("https://github.com/"));
+        f.close();
+    } else {
+        webView->load(QUrl("https://github.com/"));
     }
-    lay->addWidget(featWrap);
 
-    // Bottom divider
-    auto *div2 = new QFrame();
-    div2->setFixedHeight(1);
-    div2->setStyleSheet("background: #21262d;");
-    lay->addWidget(div2);
-
-    // Bottom links
-    auto *footer = new QWidget();
-    footer->setStyleSheet(QString("background: %1;").arg(GH::MAIN_BG));
-    auto *footerLay = new QHBoxLayout(footer);
-    footerLay->setContentsMargins(40, 24, 40, 24);
-    QStringList links = {"Help", "Status", "API", "Training", "About", "Blog", "Terms", "Privacy"};
-    for (const auto &l : links) {
-        auto *linkBtn = new QPushButton(l);
-        linkBtn->setFlat(true);
-        linkBtn->setCursor(Qt::PointingHandCursor);
-        linkBtn->setStyleSheet(QString("color: %1; font-size: 12px;").arg(GH::LINK));
-        connect(linkBtn, &QPushButton::clicked, this, []() {});
-        footerLay->addWidget(linkBtn);
-    }
-    footerLay->addStretch();
-    lay->addWidget(footer);
-
-    auto *scroll = new QScrollArea();
-    scroll->setWidget(wrap);
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setStyleSheet(QString("QScrollArea { background: %1; border: none; }").arg(GH::MAIN_BG));
-    main->addWidget(scroll);
+    main->addWidget(webView);
 }
 
 // ─── SignInPage ─────────────────────────────────────────────────────────────
